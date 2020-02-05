@@ -1,0 +1,137 @@
+---
+title: "PSET 3"
+author: "Sarah Van Alsten"
+date: "2/4/2020"
+output: html_document
+---
+
+```{r}
+#setup
+#install.packages("tidyverse")
+
+#open libraries
+library(tidyverse)
+
+```
+
+## Question 1
+
+```{r}
+
+#a.
+#function to randomly assign treatment (P = 0.5) given 2 vectors of 
+#potential outcomes
+
+treatFx <- function(v1, v0){
+  #randomly assign treatment, 1 = treated, 0 = control
+  treat <- rbinom(n = length(v1), size = 1, prob = 0.5)
+  
+  #create vector for obs outcomes under treatment: keep 
+  #outcomes if treated, otherwise not observed
+  yi1 <- ifelse(treat == 1, v1, NA)
+  
+  #create vector for obs outcomes under treatment: keep 
+  #outcomes if treated, otherwise not observed
+  yi0 <- ifelse(treat == 0, v0, NA)
+  
+  #calculate ATE: mean yi1 - mean yi0
+  ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
+  
+  #standard error:sqrt(var yi1/n yi1 + var yi0/n yi0)
+  se <- sqrt((var(yi1, na.rm = T)/sum(treat == 1)) +
+               var(yi0, na.rm = T)/sum(treat == 0))
+  
+  #t statistic
+  tstat <- ate/se
+
+  
+  #return p value for t statistic:
+  #want two sided, so multiply by 2
+  #take abs value and upper tail to keep
+  #consistent behavior for treat means gt or lt control means
+  return(pt(q = abs(tstat), df = length(v1) - 2, lower.tail = F)*2)
+  
+}
+
+```
+
+```{r}
+#1 and 2
+set.seed(02139)
+
+#outcomes under control: mean = 1, var/sd = 1
+y0 <- rnorm(n = 1000, mean = 1, sd = 1)
+
+#outcomes under treatment: mean = t = 0.2; var/sd = 1
+y1 <- rnorm(n = 1000, mean = 0.2, sd = 1)
+
+#run function
+treatFx(y1, y0)
+
+
+```
+
+The p value for the given set up is ~5.28 * 10^-33, indicating that it is very unlikely that the expected value of observed outcomes in the treatment and control groups are the same. In other words, the average treatment effect is non-zero and statistically significant.
+
+
+```{r}
+#b.
+#function that puts together treatment vector generation and treatFx: each = 1 simulation
+#m/sd/n for 0/1 represent mean, sd, and n for control and treatment groups.
+simulateFx <- function(n0 = 1000, m0 = 1, sd0 = 1, n1 = 1000, m1, sd1 = 1){
+  
+  #outcomes under control: mean = 1, var/sd = 1
+  y0 <- rnorm(n = n0, mean = m0, sd = sd0)
+
+  #outcomes under treatment: mean = t = 0.2; var/sd = 1
+  y1 <- rnorm(n = n1, mean = m1, sd = sd1)
+
+  #run function, which will return result
+  treatFx(y1, y0)
+  
+}
+
+#repeat process 10,000 times
+reps.10k.02 <- replicate(n = 10000, 
+                         expr = simulateFx(n0 = 1000, m0 = 1, sd0 = 1,
+                                           n1 = 1000, m1 = 0.2, sd1 = 1),
+                         simplify = "vector")
+
+#get % p values < 0.05
+sum(reps.10k.02 < 0.05) / (length(reps.10k.02)) #100% < 0.05
+
+```
+
+100% of calculate p-values in the simulation were less than 0.05. This number gives us the power of our experiment (how often do we correctly reject the null given that the null is true).
+
+
+```{r, fig.cap="Power Plot", fig.align="center"}
+#c.
+#function that does repeated simulation, which can be called by map function
+#m1 = treatment effect
+replicateSimFx <- function(times = 1000, m1){
+  
+  #do one simulation, where m1 = given effect size, for 'times' repetitions
+  res <- replicate(n = times, expr = simulateFx(m1 = m1), simplify = "vector")
+  
+  #return % of values <0.05
+  return(sum(res < 0.05) / (length(res)))
+  
+}
+
+
+#run simulation for different values of treatment group mean (0 - 1, along increases of .1), 
+#1000 reps each per args in replicateSimFx
+results <- purrr::map_dbl(seq(0, 1, .1), ~replicateSimFx(m1 = .x))
+
+#plot results
+as.data.frame(cbind(results, seq(0, 1, .1))) %>%
+  ggplot(aes(x = V2, y = results)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal() +
+  labs(x = "Expected Value Yi for Treated", y = "Power") +
+  ggtitle("Power for Various Treatment Effect Sizes")
+
+
+```
