@@ -5,7 +5,7 @@ date: "2/4/2020"
 output: html_document
 ---
 
-```{r}
+```{r, message=FALSE, warning=FALSE, echo = FALSE}
 #setup
 #install.packages("tidyverse")
 
@@ -76,25 +76,9 @@ The p value for the given set up is ~5.28 * 10^-33, indicating that it is very u
 
 ```{r}
 #b.
-#function that puts together treatment vector generation and treatFx: each = 1 simulation
-#m/sd/n for 0/1 represent mean, sd, and n for control and treatment groups.
-simulateFx <- function(n0 = 1000, m0 = 1, sd0 = 1, n1 = 1000, m1, sd1 = 1){
-  
-  #outcomes under control: mean = 1, var/sd = 1
-  y0 <- rnorm(n = n0, mean = m0, sd = sd0)
-
-  #outcomes under treatment: mean = t = 0.2; var/sd = 1
-  y1 <- rnorm(n = n1, mean = m1, sd = sd1)
-
-  #run function, which will return result
-  treatFx(y1, y0)
-  
-}
-
 #repeat process 10,000 times
 reps.10k.02 <- replicate(n = 10000, 
-                         expr = simulateFx(n0 = 1000, m0 = 1, sd0 = 1,
-                                           n1 = 1000, m1 = 0.2, sd1 = 1),
+                         expr = treatFx(v1 = y1, v0 = y0),
                          simplify = "vector")
 
 #get % p values < 0.05
@@ -109,10 +93,15 @@ sum(reps.10k.02 < 0.05) / (length(reps.10k.02)) #100% < 0.05
 #c.
 #function that does repeated simulation, which can be called by map function
 #m1 = treatment effect
-replicateSimFx <- function(times = 1000, m1){
+replicateSimFx <- function(times = 1000, size = 1000, m1){
   
-  #do one simulation, where m1 = given effect size, for 'times' repetitions
-  res <- replicate(n = times, expr = simulateFx(m1 = m1), simplify = "vector")
+  #generate treatment vector given #obs(size), and mean (m1)
+  v1 <- rnorm(n = size, mean = m1, sd = 1)
+
+  #do simulation for 'times' times, with previously generated v0 and our new v1
+  res <- replicate(n = times, 
+                   expr = treatFx(v0 = y0, v1 = v1), 
+                   simplify = "vector")
   
   #return % of values <0.05
   return(sum(res < 0.05) / (length(res)))
@@ -135,3 +124,182 @@ as.data.frame(cbind(results, seq(0, 1, .1))) %>%
 
 
 ```
+
+
+We have 100% or approximately 100% power to detect a significant ATE when the expected value of Yi in the treatment group ranges from 0 to 0.7 (as compared to the expected value of 1 in the control group). We still have greater than 80% power to detect a significant ATE when the expected value of Yi in the treatment group is 0.8, but after this power declines rapidly. This tells us that (for a given sample size) we have better ability to detect the 'true' ATE when the difference in outcomes between the treatment and control groups is greater (ie when we have a larger effect size).
+
+Draw one random sample of
+50 units from your population without replacement, then repeat the process in part c)
+using only that sample. Do the same for sample sizes 100, 200, and 500. Plot lines for
+each sample size on the same graph with your result from part c) and clearly label the
+different lines. What do you notice? What does this tell you about the relationship
+between sample size and your ability to detect treatment effects for a given “true”
+ATE? Why might this be the case?
+
+```{r, fig.align = "center", fig.cap="Power For Various Sample Sizes"}
+#d.
+#add in sampling of diff sizes to previous function: sample.n = sample size, size = popl size
+replicateSimFx2 <- function(times = 1000, size = 1000, m1, sample.n){
+  
+  #generate treatment vector given #obs(size), and mean (m1)
+  v1 <- rnorm(n = size, mean = m1, sd = 1)
+  
+  #generate random sample of size sample.n
+  v1.samp <- sample(v1, size = sample.n, replace = FALSE)
+ 
+
+  #do simulation for 'times' times, with previously generated v0 and our new v1.samp
+  res <- replicate(n = times, 
+                   expr = treatFx(v0 = y0, v1 = v1.samp), 
+                   simplify = "vector")
+  
+  #return % of values <0.05
+  return(sum(res < 0.05) / (length(res)))
+  
+}
+
+
+#replicate with sample size 50, various effect sizes 0-1
+results.50 <- purrr::map_dbl(seq(0, 1, .1), ~replicateSimFx2(m1 = .x, sample.n = 50))
+
+#draw random sample of 100 and repeat
+results.100 <- purrr::map_dbl(seq(0, 1, .1), ~replicateSimFx2(m1 = .x, sample.n = 100))
+
+#draw random sample of 200 and repeat
+results.200 <- purrr::map_dbl(seq(0, 1, .1), ~replicateSimFx2(m1 = .x, sample.n = 200))
+
+#draw random sample of 500 and repeat
+results.500 <- purrr::map_dbl(seq(0, 1, .1), ~replicateSimFx2(m1 = .x, sample.n = 500))
+
+#add these lines to graph
+as.data.frame(cbind(results, 
+                    results.50,
+                    results.100,
+                    results.200,
+                    results.500,
+                    seq(0, 1, .1))) %>%
+  ggplot(aes(x = V6)) +
+  #sample size 50
+  geom_point(aes(y = results.50, color = "50")) + geom_line(aes(y = results.50, color = "50")) + 
+  #sample size 100
+  geom_point(aes(y = results.100, color = "100")) + geom_line(aes(y = results.100, color = "100")) +
+  #sample size 200
+  geom_point(aes(y = results.200, color = "200")) + geom_line(aes(y = results.200, color = "200")) +
+  #sample size 500
+  geom_point(aes(y = results.500, color = "500")) + geom_line(aes(y = results.500, color = "500")) +
+  #sample size 1000
+  geom_point(aes(y = results, color = "1000")) + geom_line(aes(y = results, color = "1000")) +
+  theme_minimal() +
+  labs(x = "Expected Value Yi for Treated", y = "Power") +
+  ggtitle("Power for Various Treatment Effect Sizes + Sample Sizes") +
+  #add color legend
+  scale_color_manual(labels = paste0("n = ", c(100, 1000, 200, 50, 500)),
+                     values = c("red", "black", "orange", "blue", "forestgreen"),
+                     name = "Sample Size")
+
+
+
+
+
+```
+
+
+For a given effect size, power is (generally) greater when the sample size is larger. However, there are diminishing returns to increased sample size. The ability to detect effects of similar magnitude is substantially greater by adding 150 observations (ie going from 50 observations to 200) but you have to add about twice as many to get the same increase in power for subsequent increases in sample size (ie adding 300 observations when going from 200 to 500, or 500 when going from 500 to 1000). Additionally, there is more variablity in curves for smaller samples (they are non-monotonic), indicating how results/estimates drawn from small samples tend to be more variable than results drawn from larger ones.
+
+
+
+## Question 2.
+```{r}
+#reset the seed
+set.seed(02139)
+
+#generate vector of cluster memberships
+jij <- rep(c(1:50), each = 20)
+
+#draw group level means for each cluster
+jij.mu <- runif(n = 50, min = 0, max = 10)
+
+#data frame of cluster num + cluster mean
+clusterInfo <- as.data.frame(cbind(c(1:50), jij.mu))
+
+#observation frame to match to clusterInfo
+obs.frame <- as.data.frame(cbind(jij)) #1:1000 is individual obs number
+
+#now assign each individual observation its cluster mean
+matched <- clusterInfo %>% right_join(obs.frame, by = c("V1" = "jij"))
+
+#add individual error term
+jij.error <- rnorm(n = 1000, mean = 0, sd = 1)
+
+#generate thecorrelated error terms as group mean + individual error
+group.corr.error <- matched$jij.mu + jij.error
+
+#add to old y0 vector and call y*0
+y0star <- y0 + group.corr.error
+
+
+
+```
+
+To simulate the potential outcomes under control for 1000 clustered individuals (50 groups of 20 units each), I first generated a random group-level mean for each cluster using a random uniform distribution ranging from 0 to 10 and assigned the group mean to every individual within that cluster. I then simulated within cluster variability by adding a random error term to each individual, this time drawn from a normal distribution with a mean of 0 and standard deviation of 1. Finally, to account for sampling variability, I added to each individual an additional error term, drawn from a normal distribution with mean and standard deviation of 1.
+
+
+```{r}
+#b.
+#modify function from pt 1 to sample by cluster
+
+treatFxClus <- function(v1, v0, cluster){
+  
+  #randomly assign treatment by cluster, 1 = treated, 0 = control
+  #where 1/2 clusters are treated
+  treat <- sample(x = cluster, size = length(unique(cluster))/2, replace = FALSE)
+  
+  #control is every other cluster
+  #create index of clusters that have not been treated
+  control.index <- ! 1:50 %in% treat
+  
+  #initialize dummy vector for control of length 25
+  control <- c(rep(999, 25))
+  
+  #iterate over it to add control group #s
+  #j = index of vector to add to, start it at 1
+  
+  j <- 1
+  for (i in 1:50){
+    if (control.index[i]){
+      control[j] <- i
+      j <- j + 1 #add 1 to move index up
+    }
+  }
+  
+  
+  #create vector for obs outcomes under treatment: keep 
+  #outcomes if treated, otherwise not observed
+  # yi1 <- ifelse(treat == 1, v1, NA)
+  # 
+  # #create vector for obs outcomes under treatment: keep 
+  # #outcomes if treated, otherwise not observed
+  # yi0 <- ifelse(treat == 0, v0, NA)
+  # 
+  # #calculate ATE: mean yi1 - mean yi0
+  # ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
+  # 
+  # #standard error:sqrt(var yi1/n yi1 + var yi0/n yi0)
+  # se <- sqrt((var(yi1, na.rm = T)/sum(treat == 1)) +
+  #              var(yi0, na.rm = T)/sum(treat == 0))
+  # 
+  # #t statistic
+  # tstat <- ate/se
+
+  
+  #return p value for t statistic:
+  #want two sided, so multiply by 2
+  #take abs value and upper tail to keep
+  #consistent behavior for treat means gt or lt control means
+  #return(pt(q = abs(tstat), df = length(v1) - 2, lower.tail = F)*2)
+  
+}
+treatFxClus(y1, y0, c(1:50))
+
+```
+
