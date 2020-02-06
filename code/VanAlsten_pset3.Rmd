@@ -8,9 +8,11 @@ output: html_document
 ```{r, message=FALSE, warning=FALSE, echo = FALSE}
 #setup
 #install.packages("tidyverse")
+#install.packages("Hmisc")
 
 #open libraries
 library(tidyverse)
+library(Hmisc)
 
 ```
 
@@ -238,7 +240,6 @@ group.corr.error <- matched$jij.mu + jij.error
 y0star <- y0 + group.corr.error
 
 
-
 ```
 
 To simulate the potential outcomes under control for 1000 clustered individuals (50 groups of 20 units each), I first generated a random group-level mean for each cluster using a random uniform distribution ranging from 0 to 10 and assigned the group mean to every individual within that cluster. I then simulated within cluster variability by adding a random error term to each individual, this time drawn from a normal distribution with a mean of 0 and standard deviation of 1. Finally, to account for sampling variability, I added to each individual an additional error term, drawn from a normal distribution with mean and standard deviation of 1.
@@ -256,8 +257,8 @@ treatFxClus <- function(v1, v0, cluster){
   
   #randomly assign treatment by cluster, 1 = treated, 0 = control
   #where 1/2 clusters are treated
-  treat <- sample(x = cluster, size = length(unique(cluster))/2, replace = FALSE)
-  
+  treat <- sample(x = unique(cluster), size = length(unique(cluster))/2, replace = FALSE)
+
   #create vector for obs outcomes under treatment: keep 
   #outcomes if treated, otherwise not observed
    yi1 <- ifelse(cluster %in% treat, v1, NA)
@@ -266,53 +267,11 @@ treatFxClus <- function(v1, v0, cluster){
    #outcomes if control (!treat), otherwise not observed
    yi0 <- ifelse(!cluster %in% treat, v0, NA)
    
-   ##########################################
-   # Get ATE
-   ########################################
    
-   #clusters are equal size, so simple diff in means is unbiased
-   #estimator of ATE
-   ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
-  
-   ############################################
-   # Get SE
-   ############################################
-   
-   #because clusters are equal size, can use standard robust
-   #estimator from diff in means
-   #(var of treat group/n treat group) + (var control/n control)
-  ate.var <- (var(olken[olken$treat.invite == 1, "pct.missing"])/
-              nrow(olken[olken$treat.invite == 1,])) +
-  (var(olken[olken$treat.invite == 0, "pct.missing"])/
-     nrow(olken[olken$treat.invite == 0,]))
-
-  #to get se, take sqrt
-  se <- sqrt(ate.var)
-  
-  
-   #t statistic
-   tstat <- ate/se
-
-  
-  #return p value for t statistic:
-  #want two sided, so multiply by 2
-  #take abs value and upper tail to keep
-  #consistent behavior for treat means gt or lt control means
-  return(pt(q = abs(tstat), df = length(v1) - 2, lower.tail = F)*2)
-  
-}
-treatFxClus(y1, y0, c(1:50))
-
-```
-
-
-
-
-```{r}
- 
-  ##########################################################
-  # Get Components of ICC                               
-  #########################################################
+   #####################################
+   # Get clusters that weren't treated
+   #####################################
+     
   #control is every other cluster
   #create index of clusters that have not been treated
   control.index <- ! 1:50 %in% treat
@@ -332,6 +291,126 @@ treatFxClus(y1, y0, c(1:50))
   }
    
   #now 'control' is the list of clusters not treated
+ 
+  ##########################################
+   # Get ATE
+   ########################################
+   
+   #clusters are equal size, so simple diff in means is unbiased
+   #estimator of ATE
+   ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
+
+
+  #get p value
+  test.res <-
+    Hmisc::t.test.cluster(y = c(yi1[!is.na(yi1)], yi0[!is.na(yi0)]),
+                          cluster = cluster, group =  c(rep(1,500), rep(0,500)))
+  
+  #return p value
+
+  return(test.res[20])
+
+}
+
+
+```
+
+```{r}
+#generate potential outcomes under treatment
+
+#create random treatment effect (mean = tau)
+treat.error <- rnorm(n = 1000, mean = 0.2, sd = 1)
+
+y1star <- matched$jij.mu + treat.error
+
+#Run function
+treatFxClus(v1 = y1star, v0 = y0star, cluster = matched$V1)
+
+
+```
+
+
+
+
+
+
+
+```{r}
+
+
+ 
+  #################################
+  #Make a data frame for the outcom
+  
+  
+   
+   ############################################
+   # Get SE
+   ############################################
+ 
+  ##########################################################
+  # Get Components of ICC                               
+  #########################################################
+ 
+  
+  #get variance by cluster: pt 2 (actually getting variance)
+  #means for treatment clusters
+  treat.means <- aggregate(cbind(yi1[!is.na(yi1)]), by = list(treat = rep(treat, each = 20)), 
+                           FUN = mean, na.rm = T)
+  
+  #mean for control clusters
+  control.means <- aggregate(cbind(yi0[!is.na(yi0)]), by = list(control = rep(control, each = 20)),
+                             FUN = mean, na.rm = T)
+   
+  #get global mean (of all observations)
+  global.mean <- mean(c(yi1, yi0), na.rm = T)
+   
+  #get total variance: sum of all individual Y - global mean
+  tot.var <- sum((c(yi1[!is.na(yi1)], yi0[!is.na(yi0)]) - global.mean)^2)
+  
+  #get betwen cluster variance (squared deviations of group means - global mean)
+  between.var <- sum(20*((c(treat.means$V1, control.means$V1) - global.mean)^2))
+  
+  #get ICC
+  icc <- between.var/tot.var
+  
+  #get design effect correction to multiply se to
+  design.correction <- 1 + ((20 - 1)*icc)
+  
+  #standard error:sqrt(var yi1/n yi1 + var yi0/n yi0)
+  se <- sqrt((var(yi1, na.rm = T)/500) +
+               var(yi0, na.rm = T)/500)
+  
+  
+  #multiply by design correction
+  se.final <- se*sqrt(design.correction)
+  
+
+
+
+test.res <-
+    Hmisc::t.test.cluster(y = c(yi1, yi0), cluster = c(treat, control), group =  c(rep(1,25), rep(0,25)))
+
+
+   #t statistic
+   tstat <- ate/se
+   
+   ##########################################
+   # Get ATE
+   ########################################
+   
+   #clusters are equal size, so simple diff in means is unbiased
+   #estimator of ATE
+   ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
+  
+   ############################################
+   # Get SE
+   ############################################
+ 
+  ##########################################################
+  # Get Components of ICC                               
+  #########################################################
+ 
   
   #get variance by cluster: pt 2 (actually getting variance)
   #means for treatment clusters
