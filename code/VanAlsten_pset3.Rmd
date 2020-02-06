@@ -30,8 +30,8 @@ treatFx <- function(v1, v0){
   #outcomes if treated, otherwise not observed
   yi1 <- ifelse(treat == 1, v1, NA)
   
-  #create vector for obs outcomes under treatment: keep 
-  #outcomes if treated, otherwise not observed
+  #create vector for obs outcomes under control: keep 
+  #outcomes if control, otherwise not observed
   yi0 <- ifelse(treat == 0, v0, NA)
   
   #calculate ATE: mean yi1 - mean yi0
@@ -250,10 +250,69 @@ To simulate the potential outcomes under control for 1000 clustered individuals 
 
 treatFxClus <- function(v1, v0, cluster){
   
+  #######################################
+  # Assign Treatment
+  ######################################
+  
   #randomly assign treatment by cluster, 1 = treated, 0 = control
   #where 1/2 clusters are treated
   treat <- sample(x = cluster, size = length(unique(cluster))/2, replace = FALSE)
   
+  #create vector for obs outcomes under treatment: keep 
+  #outcomes if treated, otherwise not observed
+   yi1 <- ifelse(cluster %in% treat, v1, NA)
+   
+   #create vector for obs outcomes under control: keep 
+   #outcomes if control (!treat), otherwise not observed
+   yi0 <- ifelse(!cluster %in% treat, v0, NA)
+   
+   ##########################################
+   # Get ATE
+   ########################################
+   
+   #clusters are equal size, so simple diff in means is unbiased
+   #estimator of ATE
+   ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
+  
+   ############################################
+   # Get SE
+   ############################################
+   
+   #because clusters are equal size, can use standard robust
+   #estimator from diff in means
+   #(var of treat group/n treat group) + (var control/n control)
+  ate.var <- (var(olken[olken$treat.invite == 1, "pct.missing"])/
+              nrow(olken[olken$treat.invite == 1,])) +
+  (var(olken[olken$treat.invite == 0, "pct.missing"])/
+     nrow(olken[olken$treat.invite == 0,]))
+
+  #to get se, take sqrt
+  se <- sqrt(ate.var)
+  
+  
+   #t statistic
+   tstat <- ate/se
+
+  
+  #return p value for t statistic:
+  #want two sided, so multiply by 2
+  #take abs value and upper tail to keep
+  #consistent behavior for treat means gt or lt control means
+  return(pt(q = abs(tstat), df = length(v1) - 2, lower.tail = F)*2)
+  
+}
+treatFxClus(y1, y0, c(1:50))
+
+```
+
+
+
+
+```{r}
+ 
+  ##########################################################
+  # Get Components of ICC                               
+  #########################################################
   #control is every other cluster
   #create index of clusters that have not been treated
   control.index <- ! 1:50 %in% treat
@@ -271,35 +330,34 @@ treatFxClus <- function(v1, v0, cluster){
       j <- j + 1 #add 1 to move index up
     }
   }
+   
+  #now 'control' is the list of clusters not treated
+  
+  #get variance by cluster: pt 2 (actually getting variance)
+  #means for treatment clusters
+  treat.means <- aggregate(cbind(yi1[!is.na(yi1)]), by = list(treat = treat), FUN = mean, na.rm = T)
+  
+  #mean for control clusters
+  control.means <- aggregate(cbind(yi0[!is.na(yi0)]), by = list(control = control), FUN = mean, na.rm = T)
+   
+  #get global mean (of all observations)
+  global.mean <- mean(c(yi1, yi0), na.rm = T)
+   
+  #get total variance: sum of all individual Y - global mean
+  tot.var <- sum((c(yi1[!is.na(yi1)], yi0[!is.na(yi0)]) - global.mean)^2)
+  
+  #get betwen cluster variance (squared deviations of group means - global mean)
+  between.var <- sum(20*((c(treat.means$V1, control.means$V1) - global.mean)^2))
+  
+  #get ICC
+  icc <- between.var/tot.var
+  
+  #get design effect correction to multiply se to
+  design.correction <- 1 + ((20 - 1)*icc)
   
   
-  #create vector for obs outcomes under treatment: keep 
-  #outcomes if treated, otherwise not observed
-  # yi1 <- ifelse(treat == 1, v1, NA)
-  # 
-  # #create vector for obs outcomes under treatment: keep 
-  # #outcomes if treated, otherwise not observed
-  # yi0 <- ifelse(treat == 0, v0, NA)
-  # 
-  # #calculate ATE: mean yi1 - mean yi0
-  # ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
-  # 
-  # #standard error:sqrt(var yi1/n yi1 + var yi0/n yi0)
-  # se <- sqrt((var(yi1, na.rm = T)/sum(treat == 1)) +
-  #              var(yi0, na.rm = T)/sum(treat == 0))
-  # 
-  # #t statistic
-  # tstat <- ate/se
-
-  
-  #return p value for t statistic:
-  #want two sided, so multiply by 2
-  #take abs value and upper tail to keep
-  #consistent behavior for treat means gt or lt control means
-  #return(pt(q = abs(tstat), df = length(v1) - 2, lower.tail = F)*2)
-  
-}
-treatFxClus(y1, y0, c(1:50))
-
+  ###########################################
+  #Get standard error 
+  ##########################################
 ```
 
