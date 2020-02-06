@@ -238,6 +238,7 @@ group.corr.error <- matched$jij.mu + jij.error
 
 #add to old y0 vector and call y*0
 y0star <- y0 + group.corr.error
+hist(y0star)
 
 
 ```
@@ -258,60 +259,87 @@ treatFxClus <- function(v1, v0, cluster){
   #randomly assign treatment by cluster, 1 = treated, 0 = control
   #where 1/2 clusters are treated
   treat <- sample(x = unique(cluster), size = length(unique(cluster))/2, replace = FALSE)
+  
+  #make a data frame of outcomes and their respective clusters
+  df <- as.data.frame(cbind(v1,v0,cluster))
+  
+  #if cluster was sampled, treated, else control
+  df <- df %>%
+    mutate(treat = ifelse(cluster %in% treat, 1, 0)) %>%
+    #create one observed outcome vec
+    mutate(obs = ifelse(treat == 1, v1, v0))
+  
+  #get cluster group means
+  df <- df %>%
+    group_by(cluster) %>%
+    mutate(groupMean = mean(obs, na.rm = T)) %>%
+    ungroup()
 
-  #create vector for obs outcomes under treatment: keep 
-  #outcomes if treated, otherwise not observed
-   yi1 <- ifelse(cluster %in% treat, v1, NA)
-   
-   #create vector for obs outcomes under control: keep 
-   #outcomes if control (!treat), otherwise not observed
-   yi0 <- ifelse(!cluster %in% treat, v0, NA)
-   
-   
-   #####################################
-   # Get clusters that weren't treated
-   #####################################
-     
-  #control is every other cluster
-  #create index of clusters that have not been treated
-  control.index <- ! 1:50 %in% treat
-  
-  #initialize dummy vector for control of length 25
-  control <- c(rep(999, 25))
-  
-  #iterate over it to add control group #s
-  #j = index of vector to add to, start it at 1
-  
-  j <- 1
-  for (i in 1:50){
-    if (control.index[i]){
-      control[j] <- i
-      j <- j + 1 #add 1 to move index up
-    }
-  }
-   
-  #now 'control' is the list of clusters not treated
- 
   ##########################################
    # Get ATE
    ########################################
    
-   #clusters are equal size, so simple diff in means is unbiased
-   #estimator of ATE
-   ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
+   #get means of treated/control
+  treat.mean <- df %>%
+    filter(treat == 1) %>%
+    summarise(mean = mean(obs, na.rm = T))
+  
+  control.mean <- df %>%
+    filter(treat == 0) %>%
+    summarise(mean = mean(obs, na.rm = T))
+  
+  #ate:
+  ate <- treat.mean$mean - control.mean$mean
 
-
-  #get p value
+  #get variances of treated/control
+  treat.var <- df %>%
+    filter(treat == 1) %>%
+    summarise(var = var(obs, na.rm = T))
+  
+  control.var <- df %>%
+    filter(treat == 0) %>%
+    summarise(var = var(obs, na.rm = T))
+  
+  ##########################################################
+  # Get Components of ICC                               
+  #########################################################
+   
+  #global means by treatment
+  global.mean.treat <- treat.mean$mean
+  global.mean.control <- control.mean$mean
+   
+  #get btwn sum squares: sum of squared deviations of groupMeans from global mean
+  tot.ss.treat <- sum(20*(df[df$treat == 1, "groupMean"] - global.mean.treat)^2)
+  tot.ss.cont <- sum(20*(df[df$treat == 0, "groupMean"] - global.mean.control)^2)
+  
+  cluster.mss <- (tot.ss.treat + tot.ss.cont)/(unique(cluster)-2)
+  
+  #get within cluster variance 
+  between.var <- sum(((df$groupMean - global.mean)^2))
+  
+  #get ICC
+  icc <- between.var/tot.var
+  
+  #get design effect correction to multiply se to
+  design.correction <- 1 + ((20 - 1)*icc)
+  
+  
+  #get p value and perform hypothesis test
   test.res <-
-    Hmisc::t.test.cluster(y = c(yi1[!is.na(yi1)], yi0[!is.na(yi0)]),
-                          cluster = cluster, group =  c(rep(1,500), rep(0,500)))
+    Hmisc::t.test.cluster(y = df$obs,
+                          cluster = df$cluster,
+                          group =  df$treat)
+  
+  
+  mod <- lm(obs ~ treat, data = df)
+  se <- sqrt(diag(sandwich::vcovCL(mod, cluster = df$cluster)))
+  se2 <- sqrt(diag(sandwich::vcovHC(mod, type = "HC1")))
+  
   
   #return p value
-
-  return(test.res[20])
+  return(list(test.res, summary(mod), se, se2, icc, design.correction))
 
 }
-
 
 ```
 
@@ -329,114 +357,51 @@ treatFxClus(v1 = y1star, v0 = y0star, cluster = matched$V1)
 
 ```
 
-
-
-
-
-
+Unlike in the original simulation, the test under the clustering structure is not significant.
 
 ```{r}
+#c. replicate 1000 times for different values of tau 
+#create another function that runs results 1000 times each
+repCluster1000 <- function(tau, times = 1000){
+  
+  #create random treatment effect (mean = tau)
+  treat.error <- rnorm(n = 1000, mean = 0.2, sd = 1)
+
+  y1star <- matched$jij.mu + treat.error
+  
+  #do simulation for 1000 times
+  res <- replicate(n = times, 
+                   expr = treatFxClus(v0 = y0star, v1 = y1star, cluster = matched$V1),
+                   simplify = "vector")
+  
+  #return % of values <0.05
+  print(sum(res < 0.05) / (length(res)))
+  return(sum(res < 0.05) / (length(res)))
+  
+}
 
 
- 
-  #################################
-  #Make a data frame for the outcom
-  
-  
-   
-   ############################################
-   # Get SE
-   ############################################
- 
-  ##########################################################
-  # Get Components of ICC                               
-  #########################################################
- 
-  
-  #get variance by cluster: pt 2 (actually getting variance)
-  #means for treatment clusters
-  treat.means <- aggregate(cbind(yi1[!is.na(yi1)]), by = list(treat = rep(treat, each = 20)), 
-                           FUN = mean, na.rm = T)
-  
-  #mean for control clusters
-  control.means <- aggregate(cbind(yi0[!is.na(yi0)]), by = list(control = rep(control, each = 20)),
-                             FUN = mean, na.rm = T)
-   
-  #get global mean (of all observations)
-  global.mean <- mean(c(yi1, yi0), na.rm = T)
-   
-  #get total variance: sum of all individual Y - global mean
-  tot.var <- sum((c(yi1[!is.na(yi1)], yi0[!is.na(yi0)]) - global.mean)^2)
-  
-  #get betwen cluster variance (squared deviations of group means - global mean)
-  between.var <- sum(20*((c(treat.means$V1, control.means$V1) - global.mean)^2))
-  
-  #get ICC
-  icc <- between.var/tot.var
-  
-  #get design effect correction to multiply se to
-  design.correction <- 1 + ((20 - 1)*icc)
-  
-  #standard error:sqrt(var yi1/n yi1 + var yi0/n yi0)
-  se <- sqrt((var(yi1, na.rm = T)/500) +
-               var(yi0, na.rm = T)/500)
-  
-  
-  #multiply by design correction
-  se.final <- se*sqrt(design.correction)
-  
+#run 1000 times at different values of tau
+clus.results <- purrr::map_dbl(seq(0, 1, .1), ~repCluster1000(tau = .x, times = 1000))
+
+#add these to the plot of results of 1c.
+
+#plot results
+as.data.frame(cbind(results, clus.results, seq(0, 1, .1))) %>%
+  ggplot(aes(x = V3)) +
+  geom_point(aes(y = results, color = "black")) +
+  geom_line(aes(y = results, color = "black")) +
+  geom_point(aes(y = clus.results, color = "blue")) +
+  geom_line(aes(y = clus.results, color = "blue")) +
+  theme_minimal() +
+  labs(x = "Expected Value Yi for Treated", y = "Power") +
+  ggtitle("Power for Various Treatment Effect Sizes") +
+  scale_color_manual(values = c("black", "blue"), labels = c("standard","cluster"))
 
 
 
-test.res <-
-    Hmisc::t.test.cluster(y = c(yi1, yi0), cluster = c(treat, control), group =  c(rep(1,25), rep(0,25)))
-
-
-   #t statistic
-   tstat <- ate/se
-   
-   ##########################################
-   # Get ATE
-   ########################################
-   
-   #clusters are equal size, so simple diff in means is unbiased
-   #estimator of ATE
-   ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
-  
-   ############################################
-   # Get SE
-   ############################################
- 
-  ##########################################################
-  # Get Components of ICC                               
-  #########################################################
- 
-  
-  #get variance by cluster: pt 2 (actually getting variance)
-  #means for treatment clusters
-  treat.means <- aggregate(cbind(yi1[!is.na(yi1)]), by = list(treat = treat), FUN = mean, na.rm = T)
-  
-  #mean for control clusters
-  control.means <- aggregate(cbind(yi0[!is.na(yi0)]), by = list(control = control), FUN = mean, na.rm = T)
-   
-  #get global mean (of all observations)
-  global.mean <- mean(c(yi1, yi0), na.rm = T)
-   
-  #get total variance: sum of all individual Y - global mean
-  tot.var <- sum((c(yi1[!is.na(yi1)], yi0[!is.na(yi0)]) - global.mean)^2)
-  
-  #get betwen cluster variance (squared deviations of group means - global mean)
-  between.var <- sum(20*((c(treat.means$V1, control.means$V1) - global.mean)^2))
-  
-  #get ICC
-  icc <- between.var/tot.var
-  
-  #get design effect correction to multiply se to
-  design.correction <- 1 + ((20 - 1)*icc)
-  
-  
-  ###########################################
-  #Get standard error 
-  ##########################################
 ```
+
+
+
 
