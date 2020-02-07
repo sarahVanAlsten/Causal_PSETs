@@ -546,3 +546,17 @@ Thus, the fraction of clusters assigned to 0.5 and the fraction of clusters assi
 
 ## Question 3.
 
+a. The ATE  parameter is defined as the expectation of the difference between $\overline{X}$ and $\overline{Y}$ : $\mathbb{E}(\overline{X} - \overline{Y})$ . It represents the difference in the potential outcomes given treatment $A$ versus treatment $B$ . We estimate this parameter from our sample means as follows:
+$$\mathbb{E}[{X} - {Y}]$$
+$$\mathbb{E}[{X}] - \mathbb{E}[{Y}]$$
+$$\overline{X} - \overline{Y}$$
+$$\frac{1}{n}\sum^{i}_{n = 1}x_{i} - \frac{1}{m}\sum^{i}_{m = 1}y_{i} $$
+
+b. The variance of the ATE estimator is defined as:
+$$\frac{1}{N}(\frac{m}{n}\frac{N-n}{N-1}\frac{\sigma^2}{n} + \frac{n}{m}\frac{N-m}{N-1}\frac{\tau^2}{m} - 2(\frac{1}{N-1}cov(x,y)))$$
+
+Where $$\frac{N-n}{N-1}\frac{\sigma^2}{n}$$ is $$Var(\overline{X})$$
+, $$\frac{N-m}{N-1}\frac{\tau^2}{m}$$ is $$Var(\overline{Y})$$
+and $$ -(\frac{1}{N-1}cov(x,y))$$ is $$cov(\overline{X},\overline{Y})$$
+
+c. The difference between this variance and the "true" variance in the population are that this variance treats the covariance of $x$ and $y$ as 0. We cannot ever observe this with the data we have because we can only observe one of the potential outcomes at a time.
