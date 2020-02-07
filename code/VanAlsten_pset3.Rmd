@@ -2,7 +2,7 @@
 title: "PSET 3"
 author: "Sarah Van Alsten"
 date: "2/4/2020"
-output: html_document
+output: pdf_document
 ---
 
 ```{r, message=FALSE, warning=FALSE, echo = FALSE}
@@ -182,15 +182,20 @@ as.data.frame(cbind(results,
                     seq(0, 1, .1))) %>%
   ggplot(aes(x = V6)) +
   #sample size 50
-  geom_point(aes(y = results.50, color = "50")) + geom_line(aes(y = results.50, color = "50")) + 
+  geom_point(aes(y = results.50, color = "50")) + 
+  geom_line(aes(y = results.50, color = "50")) + 
   #sample size 100
-  geom_point(aes(y = results.100, color = "100")) + geom_line(aes(y = results.100, color = "100")) +
+  geom_point(aes(y = results.100, color = "100")) +
+  geom_line(aes(y = results.100, color = "100")) +
   #sample size 200
-  geom_point(aes(y = results.200, color = "200")) + geom_line(aes(y = results.200, color = "200")) +
+  geom_point(aes(y = results.200, color = "200")) +
+  geom_line(aes(y = results.200, color = "200")) +
   #sample size 500
-  geom_point(aes(y = results.500, color = "500")) + geom_line(aes(y = results.500, color = "500")) +
+  geom_point(aes(y = results.500, color = "500")) +
+  geom_line(aes(y = results.500, color = "500")) +
   #sample size 1000
-  geom_point(aes(y = results, color = "1000")) + geom_line(aes(y = results, color = "1000")) +
+  geom_point(aes(y = results, color = "1000")) +
+  geom_line(aes(y = results, color = "1000")) +
   theme_minimal() +
   labs(x = "Expected Value Yi for Treated", y = "Power") +
   ggtitle("Power for Various Treatment Effect Sizes + Sample Sizes") +
@@ -292,18 +297,16 @@ treatFxClus <- function(v1, v0, cluster){
   #get variances of treated/control
   treat.var <- df %>%
     filter(treat == 1) %>%
-    group_by(cluster) %>%
     summarise(var = var(obs, na.rm = T))
   
+  #control variance
   control.var <- df %>%
     filter(treat == 0) %>%
     summarise(var = var(obs, na.rm = T))
   
   #ate:
   ate <- treat.mean$mean - control.mean$mean
-  
-  #se is equivalent to that under normal difference in means test
-  se <- 
+
   
   #get p value and perform hypothesis test
   test.res <-
@@ -328,6 +331,7 @@ y1star <- matched$jij.mu + treat.error
 
 #Run function
 treatFxClus(v1 = y1star, v0 = y0star, cluster = matched$V1)
+
 
 
 ```
