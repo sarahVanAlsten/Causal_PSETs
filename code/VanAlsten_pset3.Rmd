@@ -25,7 +25,9 @@ library(Hmisc)
 #potential outcomes
 
 treatFx <- function(v1, v0){
+  
   #randomly assign treatment, 1 = treated, 0 = control
+  #number in sample will be = to length of v1
   treat <- rbinom(n = length(v1), size = 1, prob = 0.5)
   
   #create vector for obs outcomes under treatment: keep 
@@ -39,19 +41,11 @@ treatFx <- function(v1, v0){
   #calculate ATE: mean yi1 - mean yi0
   ate <- mean(yi1, na.rm = T) - mean(yi0, na.rm = T)
   
-  #standard error:sqrt(var yi1/n yi1 + var yi0/n yi0)
-  se <- sqrt((var(yi1, na.rm = T)/sum(treat == 1)) +
-               var(yi0, na.rm = T)/sum(treat == 0))
+  #t test
+  tres <- t.test(yi1, yi0)
   
-  #t statistic
-  tstat <- ate/se
-
-  
-  #return p value for t statistic:
-  #want two sided, so multiply by 2
-  #take abs value and upper tail to keep
-  #consistent behavior for treat means gt or lt control means
-  return(pt(q = abs(tstat), df = length(v1) - 2, lower.tail = F)*2)
+  #return pvalue for t test
+  return(tres$p.value)
   
 }
 
@@ -64,8 +58,11 @@ set.seed(02139)
 #outcomes under control: mean = 1, var/sd = 1
 y0 <- rnorm(n = 1000, mean = 1, sd = 1)
 
-#outcomes under treatment: mean = t = 0.2; var/sd = 1
+#ate of outcomes under treatment: mean = t = 0.2; var/sd = 1
 y1 <- rnorm(n = 1000, mean = 0.2, sd = 1)
+
+#add to potential outcome under control
+y1 <- y0 + y1
 
 #run function
 treatFx(y1, y0)
@@ -84,11 +81,11 @@ reps.10k.02 <- replicate(n = 10000,
                          simplify = "vector")
 
 #get % p values < 0.05
-sum(reps.10k.02 < 0.05) / (length(reps.10k.02)) #100% < 0.05
+sum(reps.10k.02 < 0.05) / (length(reps.10k.02)) #85.74% < 0.05
 
 ```
 
-100% of calculate p-values in the simulation were less than 0.05. This number gives us the power of our experiment (how often do we correctly reject the null given that the null is true).
+85.74% of calculated p-values in the simulation were less than 0.05. This number gives us the power of our experiment (how often do we correctly reject the null given that the null is true).
 
 
 ```{r, fig.cap="Power Plot", fig.align="center"}
@@ -97,8 +94,8 @@ sum(reps.10k.02 < 0.05) / (length(reps.10k.02)) #100% < 0.05
 #m1 = treatment effect
 replicateSimFx <- function(times = 1000, size = 1000, m1){
   
-  #generate treatment vector given #obs(size), and mean (m1)
-  v1 <- rnorm(n = size, mean = m1, sd = 1)
+  #generate treatment vector given number observation(size), and mean (m1)
+  v1 <- y0 + rnorm(n = size, mean = m1, sd = 1)
 
   #do simulation for 'times' times, with previously generated v0 and our new v1
   res <- replicate(n = times, 
@@ -121,14 +118,14 @@ as.data.frame(cbind(results, seq(0, 1, .1))) %>%
   geom_point() +
   geom_line() +
   theme_minimal() +
-  labs(x = "Expected Value Yi for Treated", y = "Power") +
+  labs(x = "Average Treatment Effect", y = "Power") +
   ggtitle("Power for Various Treatment Effect Sizes")
 
 
 ```
 
 
-We have 100% or approximately 100% power to detect a significant ATE when the expected value of Yi in the treatment group ranges from 0 to 0.7 (as compared to the expected value of 1 in the control group). We still have greater than 80% power to detect a significant ATE when the expected value of Yi in the treatment group is 0.8, but after this power declines rapidly. This tells us that (for a given sample size) we have better ability to detect the 'true' ATE when the difference in outcomes between the treatment and control groups is greater (ie when we have a larger effect size).
+We have 100% or approximately 100% power to detect a significant ATE when the ATE is 0.4 or greater (as compared to the expected value of 1 in the control group; thus, expected value of 1.4 or more in the treated). We still have about 70% power to detect a significant ATE when the ATE is 0.3, but for effect sizes smaller than this, power declines rapidly. This tells us that (for a given sample size) we have better ability to detect the 'true' ATE when the difference in outcomes between the treatment and control groups is greater (ie when we have a larger effect size).
 
 Draw one random sample of
 50 units from your population without replacement, then repeat the process in part c)
@@ -144,13 +141,15 @@ ATE? Why might this be the case?
 replicateSimFx2 <- function(times = 1000, size = 1000, m1, sample.n){
   
   #generate treatment vector given #obs(size), and mean (m1)
-  v1 <- rnorm(n = size, mean = m1, sd = 1)
+  v1 <- y0 + rnorm(n = size, mean = m1, sd = 1)
   
   #generate random sample of size sample.n
   v1.samp <- sample(v1, size = sample.n, replace = FALSE)
  
 
   #do simulation for 'times' times, with previously generated v0 and our new v1.samp
+  #bc # in sample = length of v1, adjusting size of v1 only accounts for smaller 
+  #sample size
   res <- replicate(n = times, 
                    expr = treatFx(v0 = y0, v1 = v1.samp), 
                    simplify = "vector")
@@ -197,7 +196,7 @@ as.data.frame(cbind(results,
   geom_point(aes(y = results, color = "1000")) +
   geom_line(aes(y = results, color = "1000")) +
   theme_minimal() +
-  labs(x = "Expected Value Yi for Treated", y = "Power") +
+  labs(x = "Average Treatment Effect", y = "Power") +
   ggtitle("Power for Various Treatment Effect Sizes + Sample Sizes") +
   #add color legend
   scale_color_manual(labels = paste0("n = ", c(100, 1000, 200, 50, 500)),
@@ -211,7 +210,7 @@ as.data.frame(cbind(results,
 ```
 
 
-For a given effect size, power is (generally) greater when the sample size is larger. However, there are diminishing returns to increased sample size. The ability to detect effects of similar magnitude is substantially greater by adding 150 observations (ie going from 50 observations to 200) but you have to add about twice as many to get the same increase in power for subsequent increases in sample size (ie adding 300 observations when going from 200 to 500, or 500 when going from 500 to 1000). Additionally, there is more variablity in curves for smaller samples (they are non-monotonic), indicating how results/estimates drawn from small samples tend to be more variable than results drawn from larger ones.
+For a given effect size, power is (generally) greater when the sample size is larger. However, there are diminishing returns to increased sample size. The ability to detect effects of similar magnitude is substantially greater by adding 50 - 150 observations when you start with 50 observations to 200, but you don't get much increase in power by adding obserations thereafter. Additionally, there is more variablity in curves for smaller samples (they are non-monotonic), indicating how results/estimates drawn from small samples tend to be more variable than results drawn from larger ones.
 
 
 ## Question 2.
@@ -229,9 +228,10 @@ jij.mu <- runif(n = 50, min = 0, max = 10)
 clusterInfo <- as.data.frame(cbind(c(1:50), jij.mu))
 
 #observation frame to match to clusterInfo
-obs.frame <- as.data.frame(cbind(jij)) #1:1000 is individual obs number
+obs.frame <- as.data.frame(cbind(jij)) 
 
 #now assign each individual observation its cluster mean
+#by merging
 matched <- clusterInfo %>% right_join(obs.frame, by = c("V1" = "jij"))
 
 #add individual error term
@@ -327,7 +327,7 @@ treatFxClus <- function(v1, v0, cluster){
 #create random treatment effect (mean = tau)
 treat.error <- rnorm(n = 1000, mean = 0.2, sd = 1)
 
-y1star <- matched$jij.mu + treat.error
+y1star <- matched$y0star + treat.error
 
 #Run function
 treatFxClus(v1 = y1star, v0 = y0star, cluster = matched$V1)
@@ -336,7 +336,7 @@ treatFxClus(v1 = y1star, v0 = y0star, cluster = matched$V1)
 
 ```
 
-Unlike in the original simulation, the test under the clustering structure is not significant.
+Like in the original simulation, the test under the clustering structure is significant.
 
 ```{r}
 #c. replicate 1000 times for different values of tau 
@@ -348,7 +348,7 @@ repCluster1000 <- function(tau, times = 1000, n = 1000, dat = matched){
   treat.error <- rnorm(n = n, mean = tau, sd = 1)
 
   # add error to group means calculated previously
-  y1star <- dat$jij.mu + treat.error
+  y1star <- dat$y0star + treat.error
   
   #do simulation for 1000 times
   res <- replicate(n = times, 
@@ -375,7 +375,7 @@ as.data.frame(cbind(results, clus.results, seq(0, 1, .1))) %>%
   geom_point(aes(y = clus.results, color = "blue")) +
   geom_line(aes(y = clus.results, color = "blue")) +
   theme_minimal() +
-  labs(x = "Expected Value Yi for Treated", y = "Power") +
+  labs(x = "Average Treatment Effect", y = "Power") +
   ggtitle("Power for Various Treatment Effect Sizes") +
   scale_color_manual(values = c("black", "blue"), labels = c("complete","cluster"),
                      name = "Type of Randomization")
@@ -385,7 +385,7 @@ as.data.frame(cbind(results, clus.results, seq(0, 1, .1))) %>%
 ```
 
 
-Yes, the results differ. The power of the test under cluster randomization is lower for all values of tau (except 1.00, when there is actually no treatment effect) than the complete randomization. Again, power decreases as the effect size decreases, but this decrease is relatively gradual and contstant compared to the sharp reduction in power for complete randomization for tau > 0.8. The reason for this is that cluster randomziation inflates the sampling variance, and for a given effect size, greater variability will result in less power.
+Yes, the results differ. The power of the test under cluster randomization is lower for all values of tau (except 0 - 0.10, when there is actually no treatment effect or only a small treatment effect) than the complete randomization. Again, power increases as the effect size increases, but this increase is relatively gradual and contstant compared to the sharp increase in power for complete randomization for tau > 0.1. The reason for this is that cluster randomziation inflates the sampling variance, and for a given effect size, greater variability will result in less power.
 
 
 ```{r}
@@ -429,7 +429,7 @@ as.data.frame(cbind(results, clus.results, seq(0, 1, .1), res.20.clus)) %>%
   geom_point(aes(y = res.40.clus, color = "red")) +
   geom_line(aes(y = res.40.clus, color = "red")) +
   theme_minimal() +
-  labs(x = "Expected Value Yi for Treated", y = "Power") +
+  labs(x = "Average Treatment Effect", y = "Power") +
   ggtitle("Power for Various Treatment Effect Sizes") +
   scale_color_manual(values = c("black", "blue", "forestgreen", "red"),
                      labels = c("complete","cluster (n = 1000, M = 50)", "cluster (n=400, M = 20)",
@@ -440,7 +440,7 @@ as.data.frame(cbind(results, clus.results, seq(0, 1, .1), res.20.clus)) %>%
 ```
 
 
-You have much lower power in the cluster randomized designs as compared to complete randomization. Keeping cluster sizes the same, there is lower power for smaller sample sizes (and small numbers of clusters) for a given effect size. 
+You have much lower power in the cluster randomized designs as compared to complete randomization. Keeping cluster sizes the same, there is lower power for smaller sample sizes (and thus a small numbers of clusters) for a given effect size. 
 
 
 
@@ -469,7 +469,7 @@ matched2$jij.error <- rnorm(n = 1000, mean = 0, sd = 1)
 #generate the correlated error terms as group mean + individual error
 matched2$group.corr.error <- matched2$jij.mu2 + matched2$jij.error
 
-#add to old y0 vector and call y*0
+#add to old y0 vector and call y*0 2
 y0star2 <- y0 + matched2$group.corr.error
 
 #also add it to df
@@ -496,7 +496,7 @@ as.data.frame(cbind(seq(0, 1, .1), res.40.clus, res.20.clus2)) %>%
   geom_point(aes(y = res.20.clus2, color = "blue")) +
   geom_line(aes(y = res.20.clus2, color = "blue")) +
   theme_minimal() +
-  labs(x = "Expected Value Yi for Treated", y = "Power") +
+  labs(x = "Average Treatment Effect", y = "Power") +
   ggtitle("Power for Various Treatment Effect Sizes") +
   scale_color_manual(values = c("black", "blue"),
                      labels = c("cluster (n = 800, M = 40)", "cluster (n = 800, M = 20)"),
@@ -506,7 +506,7 @@ as.data.frame(cbind(seq(0, 1, .1), res.40.clus, res.20.clus2)) %>%
 
 ```
 
-No, your friend is not correct. For the same sample size, power is higher when you have a larger number of clusters rather than a larger number of observations within each cluster. The reason for this is the design-effect/Moulton factor. The sampling variance associated with cluster randomization increases by a factor of $1 + (\overline{N} - 1)\rho$ where $\rho$ is the ICC and $\overline{N}$ is the average number of observations in a cluster, as defined below.
+No, your friend is not correct. For the same sample size, power is (generally) higher when you have a larger number of clusters rather than a larger number of observations within each cluster, especially at larger effect sizes. Also somewhat concerningly, 35% of tests run in the condition with 20 clusters found a significant effect of treatment when there, in fact, was no effect, representing a substantial type 1 error rate. The reason for this is the design-effect/Moulton factor. The sampling variance associated with cluster randomization increases by a factor of $1 + (\overline{N} - 1)\rho$ where $\rho$ is the ICC and $\overline{N}$ is the average number of observations in a cluster, as defined below.
 
 $$\overline{N} = \frac{1}{G}\sum_{j = 1}^{G}{N_{j}}$$
 
