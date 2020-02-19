@@ -33,11 +33,11 @@ dat$id <- as.numeric(as.character(dat$id))
 #plot distributions of friends by treat in whole network
 dat %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   facet_grid(.~D) +
   theme_bw() +
   labs(x = "Number of Friends", 
-       y = "histogram")+
+       y = "density")+
   ggtitle("Distribtutions of Friends Among Full Sample")
 
 
@@ -54,11 +54,11 @@ t.test(dat$friends ~ dat$D)
 dat %>%
   filter(supporter == 1) %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   facet_grid(.~D) +
   theme_bw() +
   labs(x = "Number of Friends", 
-       y = "histogram") +
+       y = "density") +
   ggtitle("Distribtutions of Friends Among Supporters")
 
 #supporter only data
@@ -77,11 +77,11 @@ t.test(supporter$friends ~ supporter$D)
 dat %>%
   filter(supporter == 0) %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   facet_grid(.~D) +
   theme_bw() +
   labs(x = "Number of Friends", 
-       y = "histogram")+
+       y = "density")+
   ggtitle("Distribtutions of Friends Among Non-Supporters")
 
 
@@ -187,7 +187,7 @@ p1 <-
   dat %>%
   filter(simTreat == 1) %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   labs(x = "Friends (Simulated)")+
   theme_bw()
 
@@ -195,7 +195,7 @@ p2 <-
   dat %>%
   filter(D == 1) %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   labs(x = "Friends (Actual)") +
   theme_bw()
 
@@ -231,7 +231,7 @@ p1 <-
   filter(supporter == 1) %>%
   filter(simTreat == 1) %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   labs(x = "Friends (Simulated)")+
   theme_bw()
 
@@ -240,7 +240,7 @@ p2 <-
   filter(supporter == 1) %>%
   filter(D == 1) %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   labs(x = "Friends (Actual)") +
   theme_bw()
 
@@ -279,7 +279,7 @@ p1 <-
   filter(supporter == 0) %>%
   filter(simTreat == 1) %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   labs(x = "Friends (Simulated)")+
   theme_bw()
 
@@ -288,7 +288,7 @@ p2 <-
   filter(supporter == 0) %>%
   filter(D == 1) %>%
   ggplot(aes(x = friends)) +
-  geom_histogram() +
+  geom_density() +
   labs(x = "Friends (Actual)") +
   theme_bw()
 
@@ -301,7 +301,7 @@ t.test(dat[dat$simTreat == 1 & dat$supporter == 0, "friends"],
 
 ```
 
-In the network as a whole, the  mean number of friends among individuals assigned to treatment via simulation versus individuals assigned to treatment in reality were not significantly different. Similarly, there was not a signficant difference between the mean degree of a) supporters and b) non-supporters randomized to treatment via simulation versus reality. In the whole sample, the distribution of friends was similar to that in the real data, while in supporters and non-supporters, the distributions of friends were left-skewed in comparison to more normal distributions in the real data
+In the network as a whole, the  mean number of friends among individuals assigned to treatment via simulation versus individuals assigned to treatment in reality were not significantly different. Similarly, there was not a signficant difference between the mean degree of a) supporters and b) non-supporters randomized to treatment via simulation versus reality. In the whole sample, the distribution of friends was similar to that in the real data, while in supporters and non-supporters, the distributions of friends were right-skewed/non-normal in comparison to more normal distributions in the real data
 
 d.
 ```{r}
@@ -352,7 +352,7 @@ reRandomize <- function(){
 ```
 
 i.
-```{r}
+```{r, fig.align='center', fig.cap='Treated Individuals Donating'}
 
 #run 10000 times
 tsum <- replicate(1000, reRandomize(), simplify = "vector")
@@ -363,7 +363,7 @@ tsum <- as.data.frame(tsum)
 #plot it
 tsum %>%
   ggplot(aes(x = tsum)) +
-  geom_histogram() +
+  geom_density() +
   labs(x = "Total Treated Individuals Donating") +
   theme_bw() +
   ggtitle("Distribution of Donations in Treated Per 1000 Simulations")
@@ -383,11 +383,13 @@ tsum.actual <- sum(dat$D * dat$donate)
 #add vertical line to plot
 tsum %>%
   ggplot(aes(x = tsum)) +
-  geom_histogram() +
+  geom_density() +
   geom_vline(xintercept = tsum.actual, color = "red") +
   labs(x = "Total Treated Individuals Donating") +
   theme_bw() +
-  ggtitle("Distribution of Donations in Treated Per 1000 Simulations")
+  ggtitle("Distribution of Donations in Treated Per 1000 Simulations")+
+  annotate(geom = "text", x=31.4, y=.1, label = "Actual Tsum = 31",
+              color ="red", angle = 90)
 
 
 ```
@@ -406,7 +408,7 @@ The realized value of Tsum was significantly different from the mean simulated v
 e. In the initial data from the experiment, I found that non-supporters who recieved the campaign message had a greater number of friends than non-supporters who didn't recieve the message. This is potentially a problem for evaluating the effect of the intervention, because it indicates that those who received treatment differ systematically from those who did not. We want to know if the message will work to increase donations in individuals as a whole, and not base that evaluation on individuals with high numbers of friends only, who may have been more likely to donate in the first place. To assess whether the experiment already run was a good approximation of the expected effect of the campaign message, I simulated the experiment 10,000 times by randomly assigning the campaign donation message treatment to half of supporters and one non-supporting friend, as in the original experiment. Based on these new random assignments, I determined the expected number of donations that would have been recieved in each of the random trials. From these numbers, I calculated the average number of donations that we would expect, and compared that value to what you actually found. Essentially, the simulation allowed us to see the expected results of the campaign message even if different individuals were selected for the treatment than actually were in reality. Because the value of what we would generally expect to happen given randomization differed from what we actually found in the potentially biased sample, it seems that the over-connectivity of non-supporters in the current experiment may have overinflated our estimate of how effective the message was.
 
 f.
-```{r}
+```{r, fig.align='center', fig.cap='Simulated Distribution of Candidate Perception'}
 #f.
 #retest randomization on perceptions of candidate
 #modify function to compute Di*Yi of each simulated treatment vector
@@ -467,11 +469,13 @@ tavg$V1 <- as.numeric(tavg$V1)
 #plot it
 tavg %>%
   ggplot(aes(x = V1)) +
-  geom_histogram() +
+  geom_density() +
   geom_vline(xintercept = tavg.actual, color = "red") +
   labs(x = "Average Perceptions of Candidate in Treated") +
   theme_bw() +
-  ggtitle("Distribution of Avg Perceptions in Treated Per 1000 Simulations")
+  ggtitle("Distribution of Avg Perceptions in Treated Per 1000 Simulations")+
+  annotate(geom = "text", x=56.1, y=.18, label = "Actual Tavg = 55.9",
+              color ="red", angle = 90)
 
 
 ```
@@ -487,33 +491,93 @@ sharp.null*2
 This tells us that the perceptions of the candidate due to the fundraising campaign are not extreme enough to be different from what would be expected by chance. Essentially, it seems that the campaign was not effective in increasing ratings of the candidate.
 
 g.
-```{r}
+```{r, fig.cap='Simulated Feelings about Candidate, Adjusted', fig.align='center'}
 #g.
-#calculate tsumavg using residuals
-mod2 <- lm(thermo ∼ supporter* factor(friends), data = dat)
+#do same as f but use residuals rather than thermo
+reRandomizeThermo2 <- function(){
+  Gcopy <- G
+  sampleVec <- as.numeric(dat[dat$supporter == 1, "id"])
 
-#get the residuals for treated only
-dat$resid <- residuals(mod2)
+  #randomly assign treatment to 50% of supporters
+  support.treat <- sample(x = sampleVec, size = 25, replace = F)
+
+  
+  #now randomly pick a nonsupporting friend from those who were treated
+  #picked IDs of treated group:
+  treat.id <- support.treat
+  
+  #empty vector for friend ids
+  friend.id <- c(rep(99999, 25))
+
+  #loop over matrix, selecting treated rows and sampling their friends
+  for (i in 1:25){
+    #select row for treated supporter : make it a matrix rowwise
+    friend.row <- t(as.matrix(Gcopy[treat.id[i],]))
+    
+    #if they only have one friend, that friend gets treatment
+    #else, sample from all possible friends
+    if (rowSums(friend.row) == 1){
+      friend.id[i] <- which(friend.row == 1)
+
+    } else {
+      friend.id[i] <- sample(x = unique(which(friend.row == 1)), size = 1, replace = F)
+
+    }
+  }
+  
+  #concatenate all the treated ids
+  all.treat <- append(treat.id, friend.id)
+  
+  
+  #new vector for if the selected individual got treatment
+  dstar <- ifelse(dat$id %in% all.treat, 1, 0)
+  
+  #calculate tsumavg using residuals
+  mod <- lm(thermo ∼ supporter* factor(friends), data = dat)
+  
+  #get the residuals 
+  my.resid <- residuals(mod)
+
+  #multiply feelings about candidate by dstar, 
+  #for average, divide by # treated units (50)
+  return(sum(dstar*my.resid)/50)
+  
+}
+
+#run 1,000 times
+thermo.res2 <- replicate(n = 1000, reRandomizeThermo2(), simplify = "vector")
+
+#calculate tsumavg using residuals
+mod <- lm(thermo ∼ supporter* factor(friends), data = dat)
+my.resid <- residuals(mod)
+tavg.resid.actual <- sum(my.resid*dat$D)/50
+
+#make a df for plotting
+tavg2 <- as.data.frame(thermo.res2)
+tavg2$thermo.res2 <- as.numeric(tavg2$thermo.res2)
 
 #plot residuals against tavg actual
-dat %>%
-  ggplot(aes(x = resid))+
+tavg2 %>%
+  ggplot(aes(x = thermo.res2))+
   geom_density()+
-  geom_vline(xintercept = tavg.actual, color = "red") +
-  labs(x = "Unexplained variation in candidate perception")+
+  geom_vline(xintercept = tavg.resid.actual, color = "red") +
+  labs(x = "Unexplained variation in candidate perception in treated")+
   theme_bw()+
-  ggtitle("T_avg adjusted for confounding")
-
+  ggtitle("T_avg adjusted for confounding") +
+  annotate(geom = "text", x=3.2, y=.2, label = "Actual Tavg = 3.08",
+              color ="red", angle = 90)
 
 
 #calculate test statistics
-test2 <- sum(tavg.actual > dat$resid ) / length(tavg$V1)
-test2
+test2 <- sum(tavg2$thermo.res2 > tavg.resid.actual) / length(tavg2$thermo.res2)
+
+#for 2 tailed, multiply by 2
+test2*2
 
 
 ```
 
-These results suggest that perceptions of the candidate adjusted for confounding by number of friends and supporter status are not significantly different from 0. This suggests no effect of the campaign (which is captured by the residuals).
+These results suggest that perceptions of the candidate in those receiving the message, even after adjusting for confounding by number of friends and supporter status, are not extreme enough to have not occurred by chance. This suggests that the messaging campaign did not significantly affect perceptions of the candidate.
 
 h. No, we cannot answer this question with the given data. We were only testing the sharp null hypothesis of no effect for any observations, but this doesn't give us an estimate of magnitude. Under the sharp null hypothesis, we don't compute means and standard errors- each observation is compared individually to the overall cut-off and the p-value comes from the percentage that exceed that cutoff. Without the mean and standard error, we can't estimate magnitude. 
 

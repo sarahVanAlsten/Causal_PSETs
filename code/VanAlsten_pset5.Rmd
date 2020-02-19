@@ -1,0 +1,197 @@
+---
+title: "PSET 5"
+author: "Sarah Van Alsten"
+date: "2/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+
+#open libraries
+library(tidyverse)
+library(Matching)
+
+```
+
+
+## Question 1. The Curse of Dimensionality
+
+a. General Expression to Calculate Euclidean Distance between Two Points:
+
+$$Distance = \sqrt{(x_{i1} - x_{j1})^2 + (x_{i2} - x_{j2})^2 ... + (x_{iP} - x_{jP})^2}$$
+```{r}
+#write a function that will give us the distance for a given # of covariates
+getEuclidean <- function(numCov){
+  
+  #take the numCov columns to compare to
+  compareDat <- as.data.frame(dat[, 1:numCov])
+  
+  
+  #compute euclidean distance for each obs
+  compareDat <- compareDat %>%
+    #squared distance from 0 for each column
+    mutate_all(.funs = ~((0 - .)^2)) %>%
+    #create new column as sqrt of sum of these squared distances
+    mutate(euclidean = sqrt(rowSums(.)))
+  
+  #return the minimum euclidean distance
+  return(min(compareDat$euclidean))
+  
+}
+
+```
+
+
+
+b. 
+
+```{r, fig.cap = 'Euclidean Distance by Covariate Number'}
+#Generate dataset X of 500 obs, 20 covariates (normally distributed 0-1)
+set.seed(02139)
+dat <- as.data.frame(replicate(n = 20, expr = rnorm(n = 500, mean = 0, sd = 1)))
+
+#make a blank dataframe to hold results
+euc.res <- as.data.frame(cbind(1:20, rep(NA, 20)))
+
+#get euclidean distance for 1 covariate
+getEuclidean(numCov = 1)
+
+#add this to the result data
+euc.res$V2[1] <- getEuclidean(numCov = 1)
+
+#now do this for the 2:20 covariates
+for (i in 2:20){
+  euc.res$V2[i] <- getEuclidean(numCov = i)
+}
+
+#plot results
+euc.res %>%
+  ggplot(aes(x = V1, y = V2)) +
+  geom_point() +
+  geom_path() +
+  theme_bw() +
+  labs(x = "Number of Covariates",
+       y = "Minimum Euclidean Distance") +
+  ggtitle("Euclidean Distance by Number Of Covariates")
+
+
+```
+
+c. These results demonstrate that as we add more dimensions or covariates to match on, the dissimilarity (distance) between even the best match and the index obervation increases (i.e. it becomes more difficult to find a very close/similar match).
+
+## Question 2
+
+```{r, echo = FALSE}
+#read in the data
+nsw <- haven::read_dta("C://Users//Owner//OneDrive//Documents//Spring2020//Causal_Inf//psetdata//Causal_PSETs//data//nsw_exper.dta")
+
+
+psid <- haven::read_dta("C://Users//Owner//OneDrive//Documents//Spring2020//Causal_Inf//psetdata//Causal_PSETs//data//nsw_psid.dta")
+
+
+```
+
+
+a. 
+
+```{r}
+#unbiased estiamte of ATE
+nsw.t <- t.test(re78 ~ nsw, data = nsw)
+
+#ate and se
+(ate.t <- nsw.t$estimate[2] - nsw.t$estimate[1])
+(stderr.t <- nsw.t$stderr)
+
+
+#re-estimate using linear regression
+mod.nsw <- lm(re78 ~ nsw + age + educ + black + hisp + married + re74 + u74,
+              data = nsw)
+
+#get results
+summary(mod.nsw)
+
+#account for randomziation, use robust SE
+sqrt(diag(sandwich::vcovHC(mod.nsw, type="HC2")))
+
+
+```
+
+The unadjusted estimate of the average treatment effect of NSW participation on 1978 earnings was an increase of \$1794 dollars (se = \$671). After adjusting for age, race, ethnicity, education, marital status, earnings in 1974, and employment in 1974, the average treatment effect of NSW participation was somewhat lower (increase of \$1721, se = \$678). This suggests that there may have been some confounding by the covariates, but not a substantial amount.
+
+b.
+
+```{r}
+#calculate naive ATE using non-experimental data
+psid.t <- t.test(re78 ~ nsw, data = psid)
+
+#ate and se
+(ate.psid <- psid.t$estimate[2] - psid.t$estimate[1])
+(stderr.psid <- psid.t$stderr)
+
+#re-estimate using regression
+mod.psid <- lm(re78 ~ nsw + age + educ + black + hisp + married + re74 + u74,
+              data = psid)
+
+#get results
+summary(mod.psid)
+
+#account for randomziation, use robust SE
+sqrt(diag(sandwich::vcovHC(mod.psid, type="HC2")))
+
+
+```
+
+In the regression, we are estimating the average treatment effect_____________________________________________________________________________________________________________________________________________________________________________________________________
+
+These methods do not recover the experimental results because, even conditional on all the covariates we adjusted for, the treated (those who were given the work program) and untreated (the general population) are not exchangeable (we don't have conditional ignorability). This indicates lack of balance on other unobserved/not included covariates.
+
+
+c.
+```{r}
+#estimate the propensity scores
+
+mb  <- MatchBalance(nsw ~ age + educ + black +
+                    hisp + married + re74 + re75  +
+                    u74 + u75 + u78,
+                    data = psid, 
+                    nboots=10)
+
+
+
+#make a nice balance table
+btab <- tableone::CreateTableOne(vars = c("age", "educ", "black",
+                    "hisp" , "married", "re74" , "re75", "u74", "u75", "u78"),
+                    data = psid,
+                    strata = "nsw",
+                    factorVars = c("black",
+                    "hisp", "married", 
+                    "u74", "u75" , "u78"))
+
+print(btab)
+
+#also get the K-S tests for distributions from the match balance
+
+#pvalues for the KS tests for all variables
+ks.pval <- c(NA,
+             mb$BeforeMatching[[1]][9][[1]][[1]][[1]],
+             mb$BeforeMatching[[2]][9][[1]][[1]][[1]],
+             "--", #black is categorical
+             "--", #hisp is categorical
+             "--", #married is categorical
+             mb$BeforeMatching[[6]][9][[1]][[1]][[1]],
+             mb$BeforeMatching[[7]][9][[1]][[1]][[1]],
+             "--", #u74 is categorical
+             "--", #u75 is categorical
+             "--") #u78 is categorical
+
+
+
+as.data.frame(cbind(print(btab), ks.pval)) %>% kableExtra::kable()
+
+                    
+```
+
+
+
+
