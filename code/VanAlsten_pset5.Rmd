@@ -142,9 +142,8 @@ sqrt(diag(sandwich::vcovHC(mod.psid, type="HC2")))
 
 ```
 
-In the regression, we are estimating the average treatment effect_____________________________________________________________________________________________________________________________________________________________________________________________________
-
-These methods do not recover the experimental results because, even conditional on all the covariates we adjusted for, the treated (those who were given the work program) and untreated (the general population) are not exchangeable (we don't have conditional ignorability). This indicates lack of balance on other unobserved/not included covariates.
+We are estimating the average treatment effect conditional on all the covariates (age, education, race, ethnicity, marital status, earnings in 1974, and unemployment in 1974). The only difference is that now, we are using data from the general population, so we don't expect these variables to be balanced.
+These methods do not recover the experimental results because, even conditional on all the covariates we adjusted for, the treated (those who were given the work program) and untreated (the general population) are not exchangeable (we don't have conditional ignorability). This indicates lack of balance on other unobserved/not included covariates, or that treated and control units do not tend to have overlap in covariate values, so we lack positivity when conditioning on these.
 
 
 c.
@@ -155,7 +154,7 @@ mb  <- MatchBalance(nsw ~ age + educ + black +
                     hisp + married + re74 + re75  +
                     u74 + u75 + u78,
                     data = psid, 
-                    nboots=10)
+                    nboots = 10)
 
 
 
@@ -168,10 +167,7 @@ btab <- tableone::CreateTableOne(vars = c("age", "educ", "black",
                     "hisp", "married", 
                     "u74", "u75" , "u78"))
 
-print(btab)
-
 #also get the K-S tests for distributions from the match balance
-
 #pvalues for the KS tests for all variables
 ks.pval <- c(NA,
              mb$BeforeMatching[[1]][9][[1]][[1]][[1]],
@@ -185,13 +181,362 @@ ks.pval <- c(NA,
              "--", #u75 is categorical
              "--") #u78 is categorical
 
+#replace 0 with "<0.001"
+ks.pval <- str_replace(ks.pval, pattern = "0", replacement ="< 0.001")
 
 
+#print balance table with KS pvalues
 as.data.frame(cbind(print(btab), ks.pval)) %>% kableExtra::kable()
 
                     
 ```
 
+Based on the balance table, all covariates except for Hispanic ethnicity differed between the treated and control groups. In particular, unemployment in 1974 and 1975, being Black, being unmarried, and having low real earnings in 1974 and 1975 were most strongly associated with treatment status.
 
+d.
+```{r, fig.cap = 'Propensity Score Distributions'}
+#estimate propensity scores using logistic regression in experimetn
+pscore_model_exp <- glm(nsw ~ age + educ + black +
+                    hisp + married + re74 + re75  +
+                    u74 + u75 + u78,
+                    data = nsw, 
+                    family = binomial(link = logit))
+
+
+pscore_exp <- predict(pscore_model_exp, type = "response")
+
+#plot distributions of pscores
+nsw$pscore <- pscore_exp
+
+nsw %>%
+  ggplot(aes(x = pscore_exp, fill = factor(nsw),alpha = .9)) +
+  geom_density() +
+  scale_fill_discrete(name = "NSW")+
+  scale_alpha_continuous(guide = F) +
+  ggtitle("Propensity Scores Experimental") +
+  theme_bw()
+
+
+#estimate propensity scores using logistic regression in non-experiment
+pscore_model <- glm(nsw ~ age + educ + black +
+                    hisp + married + re74 + re75  +
+                    u74 + u75 + u78,
+                    data = psid, 
+                    family = binomial(link = logit))
+
+
+pscore <- predict(pscore_model, type = "response")
+
+#plot distributions of pscores
+psid$pscore <- pscore
+
+psid %>%
+  ggplot(aes(x = pscore, fill = factor(nsw), alpha = .3)) +
+  geom_density() +
+  scale_fill_discrete(name = "NSW")+
+  scale_alpha_continuous(guide = F) +
+  ggtitle("Propensity Scores Non-Experimental") +
+  theme_bw()
+
+#to see better, also plot separately
+psid %>%
+  ggplot(aes(x = pscore, fill = factor(nsw), alpha = .3)) +
+  geom_density() +
+  scale_fill_discrete(name = "NSW") +
+  facet_wrap(~nsw, scales = "free")  +
+  theme_bw()
+
+```
+
+In the experimental data, there is substantial overlap in the distributions of propensity scores - those who got treatment seem to have slightly more observations with probability of treatment greater than 0.5 than the control, but otherwise they are very similar.
+
+Conversely, there is very little overlap between the two propensity score distributions in the non-experimental data. Propensity scores in the control units are heavily skewed towards 0, and those in the treatment units are skewed towards 1. This indicates that control units had almost no probability of receiving treatment, whereas a large portion of those in the treatment group had almost complete probability of receiving treatment.
+
+The two differ because the process of randomization in the experimental data helped ensure balance between the two groups AND similar propensity scores (if propensity = probability of treatment and treatment was randomly assigned with equal probability, then propensity distributions should also be comporable), whereas in non-experimental data, pre-treatment covariates were not balanced, especially given the nature of the the treatment (a training program is most likley offered to those with low employment or job skills)
+
+
+e.
+```{r}
+
+#calculate new pscore to pass to X argument
+new.pscore <- glm(nsw ~ age + black + u74 + educ + married,
+                  family = binomial(link = "logit"),
+                  data = psid)
+
+#predict the pscore
+new.pscore <- predict(new.pscore, type = "response")
+
+#make matches
+match.mah <- Match(Y = psid$re78,
+                   Tr = psid$nsw,
+                   X = new.pscore,
+                   M = 1, estimand="ATT", Weight = 2)
+
+#make matches
+match.mah.test <- Match(Y = psid$re78,
+                   Tr = psid$nsw,
+                   X = psid[, c("age", "black", "u74", "educ", "married")],
+                   M = 1, estimand="ATT",
+                   Weight = 2)
+
+summary(match.mah.test)
+summary(match.mah)
+
+#check balance on all covariates (matched + unmatched)
+mb2 <- MatchBalance(nsw ~ age + educ + black + u74 +
+             married + hisp + re74 + re75  +
+             u75 + u78,
+             data = psid, 
+             match.out = match.mah,
+             nboots = 10)
+
+#vector of covariates after matching
+after.tr <- c(mb2$AfterMatching[[1]][3],
+           mb2$AfterMatching[[2]][3],
+           mb2$AfterMatching[[3]][3],
+           mb2$AfterMatching[[4]][3],
+           mb2$AfterMatching[[5]][3],
+           mb2$AfterMatching[[6]][3],
+           mb2$AfterMatching[[7]][3],
+           mb2$AfterMatching[[8]][3],
+           mb2$AfterMatching[[9]][3],
+           mb2$AfterMatching[[10]][3])
+
+#vector of values in control after matching
+after.co <- c(mb2$AfterMatching[[1]][4],
+           mb2$AfterMatching[[2]][4],
+           mb2$AfterMatching[[3]][4],
+           mb2$AfterMatching[[4]][4],
+           mb2$AfterMatching[[5]][4],
+           mb2$AfterMatching[[6]][4],
+           mb2$AfterMatching[[7]][4],
+           mb2$AfterMatching[[8]][4],
+           mb2$AfterMatching[[9]][4],
+           mb2$AfterMatching[[10]][4])
+
+#sd in treated and control
+var.tr <- c(mb2$AfterMatching[[1]][5],
+           mb2$AfterMatching[[2]][5],
+           mb2$AfterMatching[[3]][5],
+           mb2$AfterMatching[[4]][5],
+           mb2$AfterMatching[[5]][5],
+           mb2$AfterMatching[[6]][5],
+           mb2$AfterMatching[[7]][5],
+           mb2$AfterMatching[[8]][5],
+           mb2$AfterMatching[[9]][5],
+           mb2$AfterMatching[[10]][5])
+
+var.co <- c(mb2$AfterMatching[[1]][6],
+           mb2$AfterMatching[[2]][6],
+           mb2$AfterMatching[[3]][6],
+           mb2$AfterMatching[[4]][6],
+           mb2$AfterMatching[[5]][6],
+           mb2$AfterMatching[[6]][6],
+           mb2$AfterMatching[[7]][6],
+           mb2$AfterMatching[[8]][6],
+           mb2$AfterMatching[[9]][6],
+           mb2$AfterMatching[[10]][6])
+
+#make numeric and get sqrts
+var.tr <- as.numeric(var.tr)
+var.co <- as.numeric(var.co)
+
+sd.tr <- sqrt(var.tr)
+sd.co <- sqrt(var.co)
+
+
+#vector of pvalues comparing groups
+match.p <- c(mb2$AfterMatching[[1]][7],
+           mb2$AfterMatching[[2]][7],
+           mb2$AfterMatching[[3]][7],
+           mb2$AfterMatching[[4]][7],
+           mb2$AfterMatching[[5]][7],
+           mb2$AfterMatching[[6]][7],
+           mb2$AfterMatching[[7]][7],
+           mb2$AfterMatching[[8]][7],
+           mb2$AfterMatching[[9]][7],
+           mb2$AfterMatching[[10]][7])
+
+#also p values for KS tests
+ks.pval2 <- c(mb2$AfterMatching[[1]][9][[1]][[1]][[1]],
+             mb2$AfterMatching[[2]][9][[1]][[1]][[1]],
+             "--", #black is categorical
+             "--", #u74 is categorical
+             "--", #married is categorical
+             "--", #hisp is categorical
+             mb2$AfterMatching[[7]][9][[1]][[1]][[1]], #re74
+             mb2$AfterMatching[[8]][9][[1]][[1]][[1]], #re75
+             "--", #u75 is categorical
+             "--") #u78 is categorical
+
+
+#bind cols to make table
+df <- as.data.frame(cbind(sprintf(after.tr, fmt = "%.3f"),
+                    sprintf(after.co, fmt = "%.3f"),
+                    sprintf(sd.tr, fmt = "%.3f"),
+                    sprintf(sd.co, fmt = "%.3f"),
+                    sprintf(match.p, fmt = "%.3f"),
+                    ks.pval2)) 
+
+#add labels
+names(df) <- c("mean.tr", "mean.co",
+               "sd.tr", "sd.co",
+               "pvalue", "KSpvalue")
+
+rownames(df) <- c("age", "educ", "black", "u74",
+                  "married", "hisp", "re74", "re75", "u75", "u78")
+
+#print table
+df %>% kableExtra::kable() %>% kableExtra::kable_styling("striped")
+
+```
+
+I chose to match participants on unemployment in 1974, race, marital status, age, and level of education. While all covariates except ethnicity were significantly (marginally) different between individuals who did and did not receive treatment, some of the variables may be causally post to treatment assignment. For instance, after receiving the NSW program, an individual would likely have different employment status in 1975 and 1978, so I did not match/condition on these. Similarly, wages in 1974 and 1975 are likely to be causally post to treatment assignment (assuming 1974 wages are measured at the year's end and treatment is given near the beginning). Conversely, being unemployed in 1974 is a confounder, because it directly affects your likelihood of getting treatment AND later earnings (if you have gaps in employment, likely your earnings will be lower even 4 years down the road), and similar for race, marital status, age and education.
+After matching on unemployment in 1974, race, marital status, age, and education, the average treatment effect of participation in the NSW program was a nonsignificant increase of \$783.68(se = \$1997.9). After matching, participants were not balanced on 1975 earnings, 1978 earnings, unemployment in 1975, and unemployment in 1978, but were balanced on other variables (however, the distributions of age and education differed by treatment status, even if means were balanced).
+
+
+```{r}
+#f.
+#use exact matching on education, race, ethnicity and married.
+#calculate new pscore to pass to X argument
+new.pscoreF <- glm(nsw ~ hisp + black + educ + married,
+                  family = binomial(link = "logit"),
+                  data = psid)
+
+#predict the pscore
+new.pscoreF <- predict(new.pscoreF, type = "response")
+
+#make matches
+match.mahF <- Match(Y = psid$re78,
+                   Tr = psid$nsw,
+                   X = new.pscoreF,
+                   M = 1, estimand="ATT",
+                   Weight = 2,
+                   exact = TRUE)
+#print ATT
+summary(match.mahF)
+
+#check balance on all covariates (matched + unmatched)
+mbF <- MatchBalance(nsw ~ age + educ + black + u74 +
+             married + hisp + re74 + re75  +
+             u75 + u78,
+             data = psid, 
+             match.out = match.mahF,
+             nboots = 10)
+
+#make a nicer looking balance table
+#vector of covariates after matching
+after.tr <- c(mbF$AfterMatching[[1]][3],
+           mbF$AfterMatching[[2]][3],
+           mbF$AfterMatching[[3]][3],
+           mbF$AfterMatching[[4]][3],
+           mbF$AfterMatching[[5]][3],
+           mbF$AfterMatching[[6]][3],
+           mbF$AfterMatching[[7]][3],
+           mbF$AfterMatching[[8]][3],
+           mbF$AfterMatching[[9]][3],
+           mbF$AfterMatching[[10]][3])
+
+#vector of values in control after matching
+after.co <- c(mbF$AfterMatching[[1]][4],
+           mbF$AfterMatching[[2]][4],
+           mbF$AfterMatching[[3]][4],
+           mbF$AfterMatching[[4]][4],
+           mbF$AfterMatching[[5]][4],
+           mbF$AfterMatching[[6]][4],
+           mbF$AfterMatching[[7]][4],
+           mbF$AfterMatching[[8]][4],
+           mbF$AfterMatching[[9]][4],
+           mbF$AfterMatching[[10]][4])
+
+#sd in treated and control
+var.tr <- c(mbF$AfterMatching[[1]][5],
+           mbF$AfterMatching[[2]][5],
+           mbF$AfterMatching[[3]][5],
+           mbF$AfterMatching[[4]][5],
+           mbF$AfterMatching[[5]][5],
+           mbF$AfterMatching[[6]][5],
+           mbF$AfterMatching[[7]][5],
+           mbF$AfterMatching[[8]][5],
+           mbF$AfterMatching[[9]][5],
+           mbF$AfterMatching[[10]][5])
+
+var.co <- c(mbF$AfterMatching[[1]][6],
+           mbF$AfterMatching[[2]][6],
+           mbF$AfterMatching[[3]][6],
+           mbF$AfterMatching[[4]][6],
+           mbF$AfterMatching[[5]][6],
+           mbF$AfterMatching[[6]][6],
+           mbF$AfterMatching[[7]][6],
+           mbF$AfterMatching[[8]][6],
+           mbF$AfterMatching[[9]][6],
+           mbF$AfterMatching[[10]][6])
+
+#make numeric and get sqrts
+var.tr <- as.numeric(var.tr)
+var.co <- as.numeric(var.co)
+
+sd.tr <- sqrt(var.tr)
+sd.co <- sqrt(var.co)
+
+
+#vector of pvalues comparing groups
+match.p <- c(mbF$AfterMatching[[1]][7],
+           mbF$AfterMatching[[2]][7],
+           mbF$AfterMatching[[3]][7],
+           mbF$AfterMatching[[4]][7],
+           mbF$AfterMatching[[5]][7],
+           mbF$AfterMatching[[6]][7],
+           mbF$AfterMatching[[7]][7],
+           mbF$AfterMatching[[8]][7],
+           mbF$AfterMatching[[9]][7],
+           mbF$AfterMatching[[10]][7])
+
+#also p values for KS tests
+ks.pval2 <- c(mbF$AfterMatching[[1]][9][[1]][[1]][[1]],
+             mbF$AfterMatching[[2]][9][[1]][[1]][[1]],
+             "--", #black is categorical
+             "--", #u74 is categorical
+             "--", #married is categorical
+             "--", #hisp is categorical
+             mbF$AftereMatching[[7]][9][[1]][[1]][[1]], #re74
+             mbF$AfterMatching[[8]][9][[1]][[1]][[1]], #re75
+             "--", #u75 is categorical
+             "--") #u78 is categorical
+
+#replace 0 with "<0.001"
+ks.pval2 <- str_replace(ks.pval2, pattern = "0", replacement ="< 0.001")
+
+
+#print balance table with KS pvalues
+df.F <- as.data.frame(cbind(sprintf(after.tr, fmt = "%.3f"),
+                    sprintf(after.co, fmt = "%.3f"),
+                    sprintf(sd.tr, fmt = "%.3f"),
+                    sprintf(sd.co, fmt = "%.3f"),
+                    sprintf(match.p, fmt = "%.3f"),
+                    ks.pval2)) 
+names(df.F) <- c("mean.tr", "mean.co",
+               "sd.tr", "sd.co",
+               "pvalue", "KSpvalue")
+
+rownames(df.F) <- c("age", "educ", "black", "u74",
+                  "married", "hisp", "re74", "re75", "u75", "u78")
+
+df.F %>% kableExtra::kable() %>% kableExtra::kable_styling("striped")
+
+
+
+```
+
+The ATT using the exact matching procedure is a significant decrease of \$5821.60 (se = \$840.65). In this round of matching, there is balance on education, race, marital status, and ethnicity (what we matched on), but not on the other variables. The results are also different in that, among the matched variables, p values are =1 rather than simply > 0.05, reflecting the exact matching process. We have fewer observations that were able to be matched, and the estimate of the effect is in the opposite direction. The results differ both because of the different covariates that we matched on and because of the exact matching process: we threw away additional observations that didn't have exact matches, and limited the variation of the covariates rather than just reducing it.
+
+
+```{r}
+#g. Re-estimate att with bias corrections
+
+
+
+
+```
 
 
