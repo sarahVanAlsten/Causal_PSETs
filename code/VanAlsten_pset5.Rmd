@@ -2,7 +2,9 @@
 title: "PSET 5"
 author: "Sarah Van Alsten"
 date: "2/18/2020"
-output: html_document
+output:
+  pdf_document:
+        latex_engine: lualatex
 ---
 
 ```{r setup, include=FALSE}
@@ -186,7 +188,9 @@ ks.pval <- str_replace(ks.pval, pattern = "0", replacement ="< 0.001")
 
 
 #print balance table with KS pvalues
-as.data.frame(cbind(print(btab), ks.pval)) %>% kableExtra::kable()
+as.data.frame(cbind(print(btab), ks.pval)) %>%
+  kableExtra::kable() %>%
+  kableExtra::kable_styling("striped")
 
                     
 ```
@@ -244,7 +248,8 @@ psid %>%
   geom_density() +
   scale_fill_discrete(name = "NSW") +
   facet_wrap(~nsw, scales = "free")  +
-  theme_bw()
+  theme_bw() +
+  scale_alpha_continuous(guide = F) 
 
 ```
 
@@ -258,28 +263,13 @@ The two differ because the process of randomization in the experimental data hel
 e.
 ```{r}
 
-#calculate new pscore to pass to X argument
-new.pscore <- glm(nsw ~ age + black + u74 + educ + married,
-                  family = binomial(link = "logit"),
-                  data = psid)
-
-#predict the pscore
-new.pscore <- predict(new.pscore, type = "response")
-
 #make matches
 match.mah <- Match(Y = psid$re78,
-                   Tr = psid$nsw,
-                   X = new.pscore,
-                   M = 1, estimand="ATT", Weight = 2)
-
-#make matches
-match.mah.test <- Match(Y = psid$re78,
                    Tr = psid$nsw,
                    X = psid[, c("age", "black", "u74", "educ", "married")],
                    M = 1, estimand="ATT",
                    Weight = 2)
 
-summary(match.mah.test)
 summary(match.mah)
 
 #check balance on all covariates (matched + unmatched)
@@ -369,6 +359,8 @@ ks.pval2 <- c(mb2$AfterMatching[[1]][9][[1]][[1]][[1]],
              "--", #u75 is categorical
              "--") #u78 is categorical
 
+#make format nicer
+ks.pval2 <- sprintf(as.numeric(ks.pval2), fmt = "%.3f")
 
 #bind cols to make table
 df <- as.data.frame(cbind(sprintf(after.tr, fmt = "%.3f"),
@@ -392,24 +384,17 @@ df %>% kableExtra::kable() %>% kableExtra::kable_styling("striped")
 ```
 
 I chose to match participants on unemployment in 1974, race, marital status, age, and level of education. While all covariates except ethnicity were significantly (marginally) different between individuals who did and did not receive treatment, some of the variables may be causally post to treatment assignment. For instance, after receiving the NSW program, an individual would likely have different employment status in 1975 and 1978, so I did not match/condition on these. Similarly, wages in 1974 and 1975 are likely to be causally post to treatment assignment (assuming 1974 wages are measured at the year's end and treatment is given near the beginning). Conversely, being unemployed in 1974 is a confounder, because it directly affects your likelihood of getting treatment AND later earnings (if you have gaps in employment, likely your earnings will be lower even 4 years down the road), and similar for race, marital status, age and education.
-After matching on unemployment in 1974, race, marital status, age, and education, the average treatment effect of participation in the NSW program was a nonsignificant increase of \$783.68(se = \$1997.9). After matching, participants were not balanced on 1975 earnings, 1978 earnings, unemployment in 1975, and unemployment in 1978, but were balanced on other variables (however, the distributions of age and education differed by treatment status, even if means were balanced).
+After matching on unemployment in 1974, race, marital status, age, and education, the average treatment effect of participation in the NSW program was a nonsignificant increase of \$1151.70 (se = \$1754.80). After matching, participants were not balanced on 1975 earnings, 1978 earnings, unemployment in 1975, and unemployment in 1978, but were balanced on other variables (however, the distributions of age and education differed by treatment status, even if means were balanced).
 
-
+f.
 ```{r}
 #f.
 #use exact matching on education, race, ethnicity and married.
-#calculate new pscore to pass to X argument
-new.pscoreF <- glm(nsw ~ hisp + black + educ + married,
-                  family = binomial(link = "logit"),
-                  data = psid)
-
-#predict the pscore
-new.pscoreF <- predict(new.pscoreF, type = "response")
 
 #make matches
 match.mahF <- Match(Y = psid$re78,
                    Tr = psid$nsw,
-                   X = new.pscoreF,
+                   X = psid[, c("hisp", "black", "educ", "married")],
                    M = 1, estimand="ATT",
                    Weight = 2,
                    exact = TRUE)
@@ -528,15 +513,198 @@ df.F %>% kableExtra::kable() %>% kableExtra::kable_styling("striped")
 
 ```
 
-The ATT using the exact matching procedure is a significant decrease of \$5821.60 (se = \$840.65). In this round of matching, there is balance on education, race, marital status, and ethnicity (what we matched on), but not on the other variables. The results are also different in that, among the matched variables, p values are =1 rather than simply > 0.05, reflecting the exact matching process. We have fewer observations that were able to be matched, and the estimate of the effect is in the opposite direction. The results differ both because of the different covariates that we matched on and because of the exact matching process: we threw away additional observations that didn't have exact matches, and limited the variation of the covariates rather than just reducing it.
+The ATT using the exact matching procedure is a significant *decrease* of \$5821.60 (se = \$840.65). In this round of matching, there is balance on education, race, marital status, and ethnicity (what we matched on), but not on the other variables. The results are also different in that, among the matched variables, p values are =1 rather than simply > 0.05, reflecting the exact matching process. We have fewer observations that were able to be matched, and the estimate of the effect is in the opposite direction. The results differ both because of the different covariates that we matched on and because of the exact matching process: we threw away additional observations that didn't have exact matches, and limited the variation of the covariates rather than just reducing it.
 
+g.
 
 ```{r}
 #g. Re-estimate att with bias corrections
+
+#match using M =1, bias corrected
+m.biascorr1 <- Match(Y = psid$re78,
+                     Tr = psid$nsw, 
+                     X = psid[, c("hisp", "black", "educ", "married")],
+                     M = 1, 
+                     estimand="ATT",
+                     Weight = 2,
+                     BiasAdjust = TRUE)
+summary(m.biascorr1)
+
+
+#match using M =4, bias corrected
+m.biascorr4 <- Match(Y = psid$re78,
+                     Tr = psid$nsw, 
+                     X = psid[, c("hisp", "black", "educ", "married")],
+                     M = 4, 
+                     estimand="ATT",
+                     Weight = 2,
+                     BiasAdjust = TRUE)
+summary(m.biascorr4)
+
+
+#match using M =10, bias corrected
+m.biascorr10 <- Match(Y = psid$re78,
+                     Tr = psid$nsw, 
+                     X = psid[, c("hisp", "black", "educ", "married")],
+                     M = 10, 
+                     estimand="ATT",
+                     Weight = 2,
+                     BiasAdjust = TRUE)
+summary(m.biascorr10)
+##################################################
+#without bias correction
+#match using M =1, bias corrected
+m.nocorr1 <- Match(Y = psid$re78,
+                     Tr = psid$nsw, 
+                     X = psid[, c("hisp", "black", "educ", "married")],
+                     M = 1, 
+                     estimand="ATT",
+                     Weight = 2,
+                     BiasAdjust = F)
+summary(m.nocorr1)
+
+
+#match using M =4, bias corrected
+m.nocorr4 <- Match(Y = psid$re78,
+                     Tr = psid$nsw, 
+                     X = psid[, c("hisp", "black", "educ", "married")],
+                     M = 4, 
+                     estimand="ATT",
+                     Weight = 2,
+                     BiasAdjust = F)
+summary(m.nocorr4)
+
+
+#match using M =10, bias corrected
+m.nocorr10 <- Match(Y = psid$re78,
+                     Tr = psid$nsw, 
+                     X = psid[, c("hisp", "black", "educ", "married")],
+                     M = 10, 
+                     estimand="ATT",
+                     Weight = 2,
+                     BiasAdjust = F)
+summary(m.nocorr10)
+
 
 
 
 
 ```
+
+The estimates in the bias-adjusted estimates are less extreme and standard errors larger than those that aren't bias adjusted. At the same time, as the number of matches increases, the number of observations and the magnitude of the effect both increase (i.e. the ATT gets more extreme, in this case more negative). The differences may be accounted by sample size and covariance between matching variables. I trust the 1:1 matching and the bias-adjusted matches more because matching 1:1 should, on average, make the matches more similar since we only match to the closest observation rather than including several that are less similar to the treated unit. The bias-adjustment should perform better than the uncorrected match because it accounts for confounders and specifically the conditonal expectation of those confounders/matching variables given other included matching variables.
+
+h.
+
+```{r}
+#h. 
+#match on the propensity score from part d
+pscore.match <- Match(Y = psid$re78,
+                      Tr = psid$nsw,
+                      X = psid$pscore,
+                      Weight = 2,
+                      estimand = "ATT",
+                      M = 1) 
+
+summary(pscore.match)
+
+```
+
+When matching on propensity scores, the ATT is a nonsignificant increase of \$923.98 (se = \$1693.80)
+
+
+i.
+```{r}
+#i.
+#set seed
+set.seed(01239)
+
+#make function that can be bootstapped to get se of propensity score
+calc_pscore <- function(){
+  
+  #take a random sample of rows from the data frame
+  psid.sub <- psid[sample(1:nrow(psid), size = 1000, replace = F),]
+
+  #estimate the propensity scores
+  ps.mod <- glm(nsw ~ hisp + black + educ + married,
+                data = psid.sub)
+  
+  #get the scores
+  psid.sub$ps.scores <- predict(ps.mod, type = "response")
+  
+  #define the PS weights for control group to get the ATT
+  psid.sub$ps.weight <- ifelse(psid.sub$nsw == 0, 
+                               (psid.sub$ps.scores/(1 - psid.sub$ps.scores)), 0)
+  
+  #get the ATT
+  ATT <- (1/sum(psid.sub$nsw == 1))*
+    sum((psid.sub$nsw * psid.sub$re78) - (psid.sub$re78*(1 - psid.sub$nsw)* psid.sub$ps.weight), na.rm = T)
+  
+  #return the ATT
+  return(ATT)
+}
+
+#bootstap the estimate
+boot.ps <- replicate(n = 10000, expr = calc_pscore(), simplify = "vector")
+
+#take a look at it
+hist(boot.ps)
+
+#get estimate and standard error of the estimate
+mean(boot.ps)
+sqrt(var(boot.ps))
+
+```
+
+Using the bootstrapped sample, the estimated effect of treatment on the treated is a decrease of \$6970 (se = \$996.58).
+
+
+j.
+```{r}
+#j.
+#use genmatch
+
+
+#The covariates we want to obtain balance on
+BalanceMat <- cbind(psid$age, psid$educ, psid$black, psid$hisp, 
+                    psid$married, psid$u74, psid$u75, psid$re75,
+                    psid$re74)
+
+#get weight matrix
+genout <- GenMatch(Tr=psid$nsw,
+                   X=psid[, c("hisp", "black", "educ", "married",
+                              "u74", "u74", "re75", "re74", "age")],
+                   BalanceMatrix = BalanceMat,
+                   estimand="ATT",
+                   M=1,
+                   pop.size=1000,
+                   max.generations=10,
+                   wait.generations=1)
+
+#match
+match.gen <- Match(Y=psid$re78,
+                   Tr=psid$nsw,
+                   X=psid[, c("hisp", "black", "educ", "married",
+                              "u74", "u74", "re75", "re74", "age")],
+                   estimand="ATT",
+                   Weight.matrix=genout)
+summary(match.gen)
+
+#check balance
+MatchBalance(nsw ~ age + educ + black + u74 +
+             married + hisp + re74 + re75  +
+             u75 + u78,
+             data = psid, 
+             match.out = match.gen,
+             nboots = 10)
+
+
+```
+
+Using genetic matching, the ATT is estimated to be a nonsignificant increase of \$2248.1 (se = \$1784.30). All covariates are balanced except age, education, and unemployment in 1978. While it takes longer, I prefer the genetic matching because of the iterative and automated matching process, and the ability to acheive good balance (at least using this data).
+
+
+k.
+
+The ATT is identified if there are no open backdoor paths confounding the association between program participation and 1978 earnings (including those by unobserved confounders), if we have not conditioned on any colliders, if there is no measurement error, and if we haven't conditioned on post-treatment covariates. Matching makes assumptions about confounding/blocking backdoor paths somewhat more plausible, but, as in regression, the success of matching in controlling for confounding depends on appropriate selection of matched covariates. We also cannot match on unobserved covariates/confounders, which may still differ between treatment and control groups after matching; thus, omitted variable bias is still possible. However, matching can be helpful in ensuring balance on what you have measured and positivity, whereas regression can violate positivity if there are no/few observations with given combinations of covariates.
 
 
