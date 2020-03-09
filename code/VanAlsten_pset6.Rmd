@@ -56,7 +56,7 @@ This assumption implies monotone treatment selection, meaning that treated units
 \[E[Y_{0i}|D = 1] \ge E[Y_{0i}|D = 0]\]
 \[E[Y_{1i}|D = 1] \ge E[Y_{1i}|D = 0]\]
 and then:
-\[\tau \le E[Y_{1i}|D_{i}=1]Pr(D_{i} = 1) + E[Y_{1i}|D_{i}=0]Pr(D_{i} = 0) -  E[Y_{0i}|D_{i}=1]Pr(D_{i} = 1) -  E[Y_{0i}|D_{i} = 0]Pr(D_{i} = 0)\]
+\[\tau \le E[Y_{i}|D_{i}=1]Pr(D_{i} = 1) + E[Y_{1i}|D_{i}=0]Pr(D_{i} = 0) -  E[Y_{0i}|D_{i}=1]Pr(D_{i} = 1) -  E[Y_{i}|D_{i} = 0]Pr(D_{i} = 0)\]
 
 
 
@@ -77,29 +77,45 @@ This assumption states that:
 \[E[Y_{0i}|D = 1,X =2] \ge E[Y_{0i}|D = 0, X =2]\]
 \[E[Y_{1i}|D = 1,X =1] \ge E[Y_{1i}|D = 0, X =1]\]
 \[E[Y_{0i}|D = 1,X =1] \ge E[Y_{0i}|D = 0, X =1]\]
-This then becomes:
+For the upper bound this then becomes:
 \[
 \begin{aligned}
-        \tau \le \sum_{X\in x}(E[Y_{1i}|D_{i}=1, X_{i} = x]Pr(D_{i} = 1, X_{i} = x) +\\
+        \tau \le \sum_{X\in x}(E[Y_{i}|D_{i}=1, X_{i} = x]Pr(D_{i} = 1, X_{i} = x) +\\
          E[Y_{1i}|D_{i}=0, X_{i} = x]Pr(D_{i} = 0, X_{i} = x) -  \\
          E[Y_{0i}|D_{i}=1, X_{i} = x]Pr(D_{i} = 1, X_{i} = x) - \\
-         E[Y_{0i}|D_{i} = 0, X_{i} = x]Pr(D_{i} = 0, X_{i} = x)) \\
+         E[Y_{i}|D_{i} = 0, X_{i} = x]Pr(D_{i} = 0, X_{i} = x)) \\
 \end{aligned}
 \]
-Given what we know about individuals with high incomes, we can also simplify further, such that:
-This then becomes:
+And for the lower bound,
 \[
 \begin{aligned}
-        \tau \le E[Y_{1i}|D_{i}=1]Pr(X_i =3) - \\
-        E[Y_{0i}|D_{i} = 0]Pr(X_{i} = 3) +\\
+        \tau \ge \sum_{X\in x}(E[Y_{i}|D_{i}=1, X_{i} = x]Pr(D_{i} = 1, X_{i} = x) - \underline{Y}(Pr(D_{i} = 1, X_{i} = x)) +\\
+        \overline{Y}(Pr(D_{i} = 0, X_{i} = x)) - (E[Y_{i}|D_{i}=0, X_{i} = x]Pr(D_{i} = 0, X_{i} = x))
+\end{aligned}
+\]
+
+Given what we know about individuals with high incomes, we can also simplify further, such that the upper bound becomes
+\[
+\begin{aligned}
+        \tau \le E[Y_{i}|D_{i}=1]Pr(X_i =3) - \\
+        E[Y_{i}|D_{i} = 0]Pr(X_{i} = 3) +\\
         \sum_{X\in (1,2)}(E[Y_{1i}|D_{i}=1, X_{i} = x]Pr(D_{i} = 1, X_{i} = x) +\\
          E[Y_{1i}|D_{i}=0, X_{i} = x]Pr(D_{i} = 0, X_{i} = x) -  \\
          E[Y_{0i}|D_{i}=1, X_{i} = x]Pr(D_{i} = 1, X_{i} = x) - \\
          E[Y_{0i}|D_{i} = 0, X_{i} = x]Pr(D_{i} = 0, X_{i} = x)) \\
 \end{aligned}
 \]
+and the lower bound becomes
+\[
+\begin{aligned}
+        \tau \ge (E[Y_{i}|D_i = 1, X_i = 3] - E[Y_i|D_i = 0, X_i = 3])(Pr(X_i = 3)+\\
+        \sum_{X\in 1,2}(E[Y_{i}|D_{i}=1, X_{i} = x]Pr(D_{i} = 1, X_{i} = x) - \underline{Y}(Pr(D_{i} = 1, X_{i} = x)) +\\
+        \overline{Y}(Pr(D_{i} = 0, X_{i} = x)) - (E[Y_{i}|D_{i}=0, X_{i} = x]Pr(D_{i} = 0, X_{i} = x))
+\end{aligned}
+\]
 
-The resulting bounds would be less credible than those expressed in part c, because we are making an additional assumption that further narrows our range of possible expected treatment effects. Instead of the less strict assumption that all treated units have expected outcomes greater than or equal to control units (irrespective of income), we added the constraint for those with high incomes that the potential outcomes for treated units if they got control is equal to the potential outcome for control under control and the potential outcomes for control units if they got treatment is equal to the potential outcome for treated units that got treatment. This makes the bound smaller, because we have changed the equality from greater than or equal (a larger interval) to equal only. This also follows the Law of Decreasing Credibility, in that as we make stronger assumptions, our inference is less credible.
+
+The resulting bounds would be less credible than those expressed in part c, because we are making an additional assumption that further narrows our range of possible expected treatment effects. Instead of the less strict assumption that all treated units have expected outcomes greater than or equal to control units (irrespective of income), we added the constraint for those with high incomes that the potential outcomes for treated units if they got control is equal to the potential outcome for control under control and the potential outcomes for control units if they got treatment is equal to the potential outcome for treated units that got treatment. This makes the bound smaller, because we have imputed the "missing" outcomes for high income units rather than assuming the worst case scenario. This also follows the Law of Decreasing Credibility, in that as we make stronger assumptions, our inference is less credible.
 
 e.
 
@@ -113,7 +129,7 @@ new.bound <-
 #low income stratum : worst case scenario
 (69)*(163/800) + (0)*(212/800) - (100)*(188/800) - (51)*(212/800)
 
-new.bound
+
 ```
 
 Now, the estimated ATE is bounded from `r new.bound` to` `r 73-56`.
