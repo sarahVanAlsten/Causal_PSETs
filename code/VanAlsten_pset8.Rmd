@@ -1,0 +1,218 @@
+---
+title: "PSET 8"
+author: "Sarah Van Alsten"
+date: "3/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+load("lee.RData")
+```
+
+## Question 1
+
+## a.
+```{r}
+#subset to only democrats
+dems <- d[d$party == 100,]
+
+#create share of vote variable
+dems$share_t <- dems$origvote / dems$totvote
+
+#vote margin in previous election
+dems2 <- dems %>%
+  #create var for CURRENT year vote margin
+  mutate(curr_margin = origvote/(highestvote + sechighestvote)) %>%
+  #pivot to make data in wide format
+  pivot_wider(id_cols = c("state","distid","distnum"), names_from = "yearel",
+              values_from = "curr_margin")
+
+#rename the columns to represent next election cycle (eg 1946 becomes 1948) ie so that
+#the PREVIOUS margin is associated with the FOLLOWING year
+names(dems2)[4:30] <- as.character(as.numeric(names(dems2)[4:30]) + 2)
+
+#pivot it back to long format where each row = 1 district/1 year
+dems2 <- dems2 %>%
+  pivot_longer(cols = as.character(seq(1948,2000, 2)), names_to = "yearel",
+               values_to = "margin_tm1")
+
+#yearel needs to be an integer to merge back
+dems2$yearel <- as.integer(dems2$yearel)
+
+#reattach the new column to the original dems data
+dems <- dems %>%
+  left_join(dems2, by = c("state", "distid", "distnum", "yearel"))
+
+#incumbency: if vote share previously > 50%
+#table(dems$margin_tm1 == .5) ... no exact ties so it's fine to just use 0 for losing
+#for anything that isnt' > .5
+dems <- dems %>%
+  mutate(incumbent = ifelse(margin_tm1 > .5, 1, 0),
+         margin_tm1_rec = margin_tm1 - .5)
+
+dems %>%
+  ggplot(aes(x = margin_tm1_rec, y = incumbent, color = factor(incumbent))) + 
+  geom_point() + theme_bw() + labs(x = "Margin of Victory", y = "P(Incumbent=1)")
+
+```
+
+This is a sharp RDD.
+
+## b.
+i)
+
+```{r}
+reg1 <- lm(share_t ~ margin_tm1_rec + incumbent,
+           data = dems)
+summary(reg1)
+
+#plot it
+plot(x =dems$margin_tm1_rec,y=  dems$share_t, col = factor(dems$incumbent),
+     xlab = "Margin in Previous Election", ylab = "Share of Vote Current Election")
+curve(expr = 0.454021+.525103*x, -.5, 0, add = T, col = "green")
+curve(expr = 0.454021+.525103*x+0.114744, 0, .5, add = T, col = "black")
+
+```
+
+$\hat\beta$ = 0.114744
+
+This suggests that, for parties that won around 50% of the previous vote, the effect of incumbency on the paty's vote share in the next election is an increase of 11.47% of the vote share.
+
+ii)
+
+```{r}
+reg2 <- lm(share_t ~ margin_tm1_rec*incumbent,
+           data = dems)
+summary(reg2)
+
+#plot it
+plot(x =dems$margin_tm1_rec,y=  dems$share_t, col = factor(dems$incumbent),
+     xlab = "Margin in Previous Election", ylab = "Share of Vote Current Election")
+curve(expr = 0.453512+.520724*x+.005414*x*(x>0), -.5, 0, add = T, col = "green")
+curve(expr = 0.453512+.520724*x+0.115063+.005414*x*(x>0), 0, .5, add = T, col = "black")
+
+```
+
+$\hat\beta$ = 0.115063
+
+This suggests that the effect of incumbency on the paty's vote share in the next election is an increase of 11.5% of the vote share plus an additional 0.5% share of the vote for each additional percentage share beyond 50% of the previous election that they won (or a loss of 0.5% of the share for each percentage of the share below 50% that they won).
+
+iii)
+
+```{r}
+#make a squared term
+dems$margin_tm1_rec_sq <- dems$margin_tm1_rec^2
+
+reg3 <- lm(share_t ~ incumbent*margin_tm1_rec_sq + incumbent*margin_tm1_rec,
+           data = dems)
+summary(reg3)
+
+#plot it
+plot(x =dems$margin_tm1_rec,y=  dems$share_t, col = factor(dems$incumbent),
+     xlab = "Margin in Previous Election", ylab = "Share of Vote Current Election")
+curve(expr = 0.456143+(0.21351*(x^2))+(0.578575*x), -.5, 0, add = T, col = "green")
+curve(expr = 0.456143+(0.21351*(x^2))+0.069615+(0.578575*x)+(-1.467144*(x^2))+(0.530537*x),
+      0, .5, add = T, col = "black")
+
+```
+
+$\hat\beta$ = 0.069615
+
+This suggests that the effect of incumbency on the margin of the vote share in the next election is an increase of 6.96% for those who won around 50% of the vote share, plus an additional amount for every percentage point greater than 50% that they won, with this amount varying quadratically. This means that additional points beyond the margin of victory are associated with greater percentage of the vote share in subsequent elections, but the effect of incumbency and previous vote share vary by previous vote share.
+
+iv)
+
+```{r}
+library(rdd)
+
+#optimal bandwidth
+ik.bw <- IKbandwidth(dems$margin_tm1_rec, dems$share_t, cutpoint = 0)
+ik.bw
+
+#discontuity model
+reg4 <- RDestimate(share_t ~ margin_tm1_rec, dems,
+                   cutpoint = 0, bw = ik.bw)
+summary(reg4)
+plot(reg4)
+```
+
+$\hat\beta$ = 0.08401
+
+For districts that won around 50% of the vote in the previous election, the effect of being an incumbent is an increase of 8.4% of the vote share in the next election. 
+
+
+## c)
+Yes, results do depend on the function form of the regression (directionally, the effect of incumbency is the same, i.e. positive, but the magnitude of the LATE changes). This is because each different functional form is estimating a slightly different effect with a different set of assumptions about the effect of the running variable and treatment assignment on the outcome.
+
+
+## d) 
+
+
+```{r}
+#write a function to trim data based on bw and fit model,
+#returning the estimated LATE and 95% CIs
+make_rd <- function(bw){
+  
+  #subset the data
+  dat <- dems[dems$margin_tm1_rec <= bw & dems$margin_tm1_rec >= (0-bw),]
+  
+  #fit the model
+  mod <- lm(share_t ~ margin_tm1_rec*incumbent,
+           data = dat)
+  
+  #return estimate and confidence interva;
+  return(c(mod$coefficients[3], confint(mod)[3,], bw))
+}
+
+
+#run the function for various bandwidths
+rd_data <- purrr::map(.x = seq(.01, .3, .01), .f = make_rd)
+rd_data <- t(as.data.frame(rd_data))
+rownames(rd_data) <- NULL
+rd_data <- as.data.frame(rd_data)
+
+#plot it
+rd_data %>%
+  ggplot(aes(x = V4, y = incumbent)) +
+  geom_path() + geom_point()+
+  geom_ribbon(aes(ymin = `2.5 %`, ymax = `97.5 %`), alpha = .2) +
+  theme_bw() + labs(x = "Bandwidth", y = "Effect of Incumbency")
+
+```
+
+
+The results are robust against the use of different bandwidth sizes, in that we still see a postive (and significant) effect of incumbency regardless of the bandwidth used. However, as we use more observations further from the cutoff, the estimated treatment effect looks larger, potentially because candidates who won by large margins (or lost by large margins) are very different from one another, and this is less true for close victories.
+
+## Question 2.
+
+## a)
+
+That the expected value of the potential outcomes are continous at the cutoff. This means that around the cutoff, treatment should be "as if" randomly assigned such that the potential outcome under treatment for those just below the cutoff is similar to/equal the potential outcome under treatment for the treated; the potential outcome under control for those just above the cutoff is similar to/equal the potential outcome under control for the control units. In the context of this experiment, that means that candidates in districts who won by a very small margin are like the candidates in districts who lost by a small margin in every way except the end result of winning/losing (and therefore the next election's incumbency), so any difference we see is the result of incumbency and not other confounding factors.
+
+
+## b) Contrast this assumption with the assumptions required for identification under selection on observables. Why do we require this new assumption?
+
+In selection on observables, we assume conditional ignorability (if we control for covariates $X$ then we have exchangeability between treatment and control) and positivity (there is a non-zero probability of having treatment and or having control for every value of $X$). Continuity in potential outcomes is similar in that we are using an additional covariate to identify the treatment effect, as this covariate influences treatment assignment and, theoretically, if we had units that took both treatmnet and control at any value of the running variable they would be exchangable; however, in [sharp] regression discontinuity, there is no value of the running variable for which we observe both treatment and control. Assignment is perfectly determined by $X$. Instead, then, we make the assumption that potential outcomes are continuous around the cutoff so we can extrapolate and get observations which we can compare to.
+
+We require this new assumption because we don't have common support. There is no value of $X_i$ for which we observe both $D_i = 1$ and $D_i = 0$, meaning that we couldn't accurately estimate the treatment effect simply by controlling for $X_i$ in a regression (or matching on $X_i$). If we have continuity in potential outcomes though, the units just below the cutoff receiving control should be essentially identical to those just above the cutoff, and can fill in for the missing common support.
+
+## c)
+
+```{r}
+#make histogram with 1% bins
+hist(dems$margin_tm1_rec, breaks = seq(-.5, .5,.01))
+
+#test the density of forcing variable
+DCdensity(dems$margin_tm1_rec, bin = .01)
+
+```
+
+This test is a good diagnostic for the assumption in part a because if the number of observations is continuous around the cutoff, it is less likely that observations are manipulating the value of the running variable in order to receive treatment or control (and which would make those who receive treatment or control on either side of the cutoff non-exchangeable and no longer good approximations of the others' potential outcomes; potential outcomes would no longer be continuous).
+
+The assumption is plausible in this case. There is continuity in the density of observations around the cutoff (as supported by both plots and the formal test; p = .71). 
+
+
+
