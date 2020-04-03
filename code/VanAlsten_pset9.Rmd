@@ -58,6 +58,7 @@ ck$pa_post <- ifelse(ck$state != "New Jersey", ck$emp.post, NA)
 cov(ck[, c("nj_pre", "nj_post", "pa_pre", "pa_post")], 
     use = "pairwise.complete.obs")
 
+
 ```
 
 The diagonals of the matrix represent the variances of each parameter (namely, the variances in unemployment (Y) at time 0/time 1 for NJ/PA) and are calculated as:
@@ -87,8 +88,20 @@ And the variance of the difference:
 $$\begin{aligned}
 &Var((\beta - \alpha) -(\delta - \gamma))\\
 &=Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma) - 2cov((\beta - \alpha), (\delta - \gamma))
-\end{aligned}$$ 
+\end{aligned}$$
 
+Because of the bilinear property of covariance, the last term in the equation can be separated out further:
+$$\begin{aligned}
+&Var((\beta - \alpha) -(\delta - \gamma))\\
+&=Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma) - 2cov((\beta - \alpha), (\delta - \gamma))\\
+&=Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma) - 2(cov((\beta, \delta) - cov(\beta, \gamma) - cov(\alpha, \delta) + cov(\alpha,\gamma))\\
+&=Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma) - 2cov(\beta, \delta) + 2cov(\beta, \gamma) + 2cov(\alpha, \delta) - 2cov(\alpha,\gamma)
+\end{aligned}$$
+
+Assuming independence between the pre-period employment in one state and the post-period employment in the other state, we can assume that $cov(\alpha,\delta)$ and $cov(\beta,\gamma)$ are 0:
+$$\begin{aligned}
+&=Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma) - 2cov(\beta, \delta) - 2cov(\alpha,\gamma)
+\end{aligned}$$
 
 We assume there is 0 covariance between units which simplifies the above to
 $$Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma)$$
@@ -100,8 +113,14 @@ $$Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2c
 #and the se is
 sqrt(82.92359 + 86.36029 - 2*50.72446 +140.5714 + 8.50429 - 2*48.3023)
 
+#the 2 sided pvalue is
+pnorm(q = att[1,1],
+      sd = sqrt(82.92359 + 86.36029 - 2*50.72446 +140.5714 + 8.50429 - 2*48.3023),
+      lower.tail = F) *2
+
 ```
 
+The ATE(se) is 2.75 (10.97) and is not significant (p = 0.80).
 
 ## Question 2. Malesky et al.
 
@@ -171,7 +190,8 @@ stargazer::stargazer(infra.mod, ag.mod, health.mod, edu.mod, comm.mod, bus.mod,
                      covariate.labels=c("Year = 2010","Treatment", "Region 2","Region 3",
                                         "Region 4","Region 5","Region 7","Region 8",
                                         "Log Area","Log Population Density","City",
-                                        "Treatment*Year", "Constant"))
+                                        "Treatment*Year", "Constant"),font.size = "small",
+                     column.sep.width = "1pt")
 
 ```
 
@@ -205,9 +225,9 @@ mal.all %>%
   #plot
   ggplot(aes(x = year, y = value, group = factor(treatment), color = factor(treatment)))+
   #the mean = point, 95% CI = error bar, line connecting
-  stat_summary(fun.y = mean, geom = "point") + 
+  stat_summary(fun = mean, geom = "point") + 
   stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = .2) +
-  stat_summary(fun.y= mean, geom = "line") +
+  stat_summary(fun= mean, geom = "line") +
   #add vertical line indicating when tx occurred
   geom_vline(xintercept = 2009, linetype = "dashed") +
   theme_bw() +
@@ -222,7 +242,7 @@ Based on the plots, it looks like there were parallel trends in agriculture, edu
 
 e.
 
-```{r, fig.cap = 'placebo tests', echo = FALSE}
+```{r, fig.cap = 'placebo tests', echo = FALSE, results = 'asis'}
 #statistically asses whether there is violation in parallel trends
 #using placebo tests of just the pretreatment period
 
@@ -275,7 +295,9 @@ stargazer::stargazer(infra.mod2, ag.mod2, health.mod2, edu.mod2, comm.mod2, bus.
                      covariate.labels=c("Year = 2008","Treatment", "Region 2","Region 3",
                                         "Region 4","Region 5","Region 7","Region 8",
                                         "Log Area","Log Population Density","City",
-                                        "Treatment*Year", "Constant"))
+                                        "Treatment*Year", "Constant"),
+                     font.size = "small",
+                     column.sep.width = "1pt")
 ```
 
 This suggests that there were no significant violations in parallel trends (all interaction p-values < 0.05) for any of the 6 indicies measured, though it should be noted that there may be slight differences in the slopes for the treatment vs. control group in the infrastructure index (p < 0.1). The difference between these results and those shown in c may be accounted for by the addition of covariates in the OLS models here versus the unconditional means estimated in c. In this case, *conditional* parallel trends hold, whereas *unconditional* seem not to have. Given that the conditional parallel trends assumption holds, the DID estimates in part b can be interpreted as ATEs, meaning that the increases in indices observed does appear to be a result of recentralization.
