@@ -1,0 +1,281 @@
+---
+title: "PSET 9"
+author: "Sarah Van Alsten"
+date: "3/30/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(kableExtra)
+
+ck <- read.csv("card_krueger.csv")
+mal <- foreign::read.dta("maleskyetal.dta")
+mal.p <- foreign::read.dta("maleskyetal_placebo.dta")
+```
+
+## 1. Card and Krueger
+
+a. The difference-in-difference estimator would be defined as the difference in observed outcomes for the treated at time 1 versus 0 minus the difference in observed outcomes for the control group at time 1 versus 0: $(\beta - \delta) -(\alpha - \gamma)$. The estimator represents the estimated effect of the treatment on the treated group as the portion of the total change in the treatment group that is left unexplained by typical (ie control) changes over time.
+
+b.
+$\alpha = E[Y_{i0}(0)|D_i = 1]$
+$\beta = E[Y_{i1}(1)|D_i = 1]$
+$\delta = E[Y_{i1}(0)|D_i = 0]$
+$\gamma = E[Y_{i0}(0)|D_i = 0]$
+
+Where $Y_{i0}$ denotes observation $Y_i$ at time 0, and $Y_{i1}$ denotes observation $Y_{i}$ at time 1.
+
+The D.I.D. estimator then becomes:
+$$(E[Y_{i1}(1)|D_i = 1]-E[Y_{i1}(0)|D_i = 0]) - (E[Y_{i0}(0)|D_i = 1]- E[Y_{i0}(0)|D_i = 0])$$
+Which can also be written as:
+$$(E[Y_{i1}(1)|D_i = 1]-E[Y_{i0}(0)|D_i = 1]) - (E[Y_{i1}(0)|D_i = 0]- E[Y_{i0}(0)|D_i = 0])$$
+
+The parallel trends assumption is needed to identify the ATT as the difference-in-difference estimator: we need to be able to use the trend in the control group to impute the potential outcomes under control at time 1 for the treated group and this can only be done if the magnitude of change is expected to be the same for the two groups (which would mean  $(E[Y_{i1}(0)|D_i = 1]- E[Y_{i0}(0)|D_i = 1]) = (E[Y_{i1}(0)|D_i = 0]- E[Y_{i0}(0)|D_i = 0])$. Assuming parallel trends, the estimator can be expressed as:
+$$(E[Y_{i1}(1)|D_i = 1]-E[Y_{i0}(0)|D_i = 1]) - (E[Y_{i1}(0)|D_i = 1]- E[Y_{i0}(0)|D_i = 1])$$
+$$= E[Y_{i1}(1)|D_i = 1]- E[Y_{i1}(0)|D_i = 1]$$
+And this expression is exactly what we want to estimate.
+
+c.
+No, we cannot find evidence for this assumption in the data. We only have data for two timepoints: right before the intervention and in the period after, so we cannot evaluate whether trends paralleled in the months or years before the intervention.
+
+d.
+```{r}
+ck.summary <- ck %>%
+  group_by(state) %>% #group by d; 0 = PA, 1 = NJ
+  summarise(February = mean(emp.pre, na.rm = T),
+            November = mean(emp.post, na.rm = T))
+
+ck.summary
+
+#var/cov matrix
+ck$nj_pre <- ifelse(ck$state == "New Jersey", ck$emp.pre, NA)
+ck$pa_pre <- ifelse(ck$state != "New Jersey", ck$emp.pre, NA)
+ck$nj_post <- ifelse(ck$state == "New Jersey", ck$emp.post, NA)
+ck$pa_post <- ifelse(ck$state != "New Jersey", ck$emp.post, NA)
+
+cov(ck[, c("nj_pre", "nj_post", "pa_pre", "pa_post")], 
+    use = "pairwise.complete.obs")
+
+```
+
+The diagonals of the matrix represent the variances of each parameter (namely, the variances in unemployment (Y) at time 0/time 1 for NJ/PA) and are calculated as:
+$$\frac{\sum (Y_{dt} - \overline{Y_{dt}})^2}{n_{dt} -1}\text{ for d = 0,1; t = 0,1}$$
+The covariances of nj_pre/nj_post and pa_pre/pa_post represent the correspondence in the unemployment numbers at a firm for a given NJ or PA firm between February (X) and November(Y) periods and are calculated as:
+$$\frac{\sum (Y_{d} - \overline{Y_{d}})^2(X_{d} - \overline{X_{d}})^2}{n_{d} -1}\text{ for d = 0,1}$$
+
+```{r}
+#estimate of the ATT
+att <- (ck.summary[1,3] - ck.summary[1,2]) - (ck.summary[2,3] - ck.summary[2,2])
+att[1,1]
+```
+
+To estimate the standard error of the difference in difference, we can use the formula for
+the variance of a difference: Var(a-b) = var(a) + var(b) - 2(cov(a,b))
+Therfore, for the estimator 
+
+$$\begin{aligned}
+(\beta - \delta) -(\alpha - \gamma)\\
+=(\beta - \alpha) -(\delta - \gamma)\\
+\end{aligned}$$
+
+We can do the following:
+$$Var(\beta - \alpha) = Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha)$$
+$$Var(\delta - \gamma) = Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma)$$
+And the variance of the difference:
+$$\begin{aligned}
+&Var((\beta - \alpha) -(\delta - \gamma))\\
+&=Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma) - 2cov((\beta - \alpha), (\delta - \gamma))
+\end{aligned}$$ 
+
+
+We assume there is 0 covariance between units which simplifies the above to
+$$Var(\beta) + Var(\alpha) - 2cov(\beta,\alpha) + Var(\delta) + Var(\gamma) - 2cov(\delta,\gamma)$$
+
+```{r}
+#using the vars and covs estimated above, the variance of the DID is:
+82.92359 + 86.36029 - 2*50.72446 +140.5714 + 8.50429 - 2*48.3023
+
+#and the se is
+sqrt(82.92359 + 86.36029 - 2*50.72446 +140.5714 + 8.50429 - 2*48.3023)
+
+```
+
+
+## Question 2. Malesky et al.
+
+a.
+```{r, results='asis'}
+df <- as.data.frame(rbind(c("$\\gamma + \\theta + \\beta + \\alpha + \\delta$",
+                            "$\\gamma + \\alpha + \\delta$", "$\\beta + \\theta$"),
+                          c("$\\beta + \\alpha + \\delta$","$\\alpha + \\delta$","$\\beta$"),
+                          c("$\\gamma + \\theta$","$\\gamma$","$\\theta$")))
+
+names(df) <- c("After", "Before", "After Minus Before")
+rownames(df) <- c("Treated", "Control", "Treated Minus Control")
+knitr::kable(df, escape = FALSE, caption = "Meaning of Parameters", 
+             format = "latex", booktabs = TRUE) 
+
+```
+
+
+
+b.
+```{r, echo=FALSE, fig.cap='DID via OLS', results = 'asis'}
+#linear regression of did
+
+#infrastructure
+infra.mod <- lm(index1 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal)
+
+#cluster robust se's
+infra.se <- sqrt(diag(sandwich::vcovCL(infra.mod, ~ tinh, type = "HC2")))
+
+#agriculture
+ag.mod <- lm(index2 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal)
+#cluster robust se's
+ag.se <- sqrt(diag(sandwich::vcovCL(ag.mod, ~ tinh, type = "HC2")))
+
+#health
+health.mod <- lm(index3 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal)
+#cluster robust se's
+health.se <- sqrt(diag(sandwich::vcovCL(health.mod, ~ tinh, type = "HC2")))
+
+#education
+edu.mod <- lm(index4 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal)
+#cluster robust se's
+edu.se <- sqrt(diag(sandwich::vcovCL(edu.mod, ~ tinh, type = "HC2")))
+
+#communication
+comm.mod <- lm(index5 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal)
+#cluster robust se's
+comm.se <- sqrt(diag(sandwich::vcovCL(comm.mod, ~ tinh, type = "HC2")))
+
+#business
+bus.mod <- lm(index6 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal)
+#cluster robust se's
+bus.se <- sqrt(diag(sandwich::vcovCL(bus.mod, ~ tinh, type = "HC2")))
+
+#make a table of results
+stargazer::stargazer(infra.mod, ag.mod, health.mod, edu.mod, comm.mod, bus.mod,
+                     se = list(infra.se, ag.se, health.se, edu.se, comm.se, bus.se), type = "latex",
+                     float = FALSE,
+                     dep.var.labels=c("Infrastructure","Agriculture", "Health", "Education", 
+                                      "Communications", "HH Business"), 
+                     covariate.labels=c("Year = 2010","Treatment", "Region 2","Region 3",
+                                        "Region 4","Region 5","Region 7","Region 8",
+                                        "Log Area","Log Population Density","City",
+                                        "Treatment*Year", "Constant"))
+
+```
+
+For all indicies except agriculture, recentralization had a postive effect on outcomes, with effects only being significant in infrastructure, health, and communications. The effect of recentralization was strongest in infrastructure, as the policy change led to an increase of .225 in the infrastructure index compared to increases of .123 and .152 in health and communications, respectively.
+
+c. 
+The key assumption to identify the causal effect of recentralization is [conditional] parallel trends, which implies that the trends in indicies for treated and non-treated groups will be the same during the pretreatment period after controlling for the covariates of region, log area, log population density, and city. These confounders also have to act additively and be time-invariant, meaning that there aren't multiplicative effects of the confounders and that confounders themselves do not change over time. We also assume no omitted variable bias when we condition on these covariates, and that none of them open up a backdoor path/are colliders. In the context of the experiment, one confounder that could violate this assumption would be log population- people may be moving into/out of an area during the time in which the intervention took place. This is an issue in that it could change the area's population, and in that migration effects could also account for observed differences rather than the intervention alone (individuals who stand to gain from recentralization might move to areas being recentralized and drive up the observed effect on various indicies). Looking back to part a, time invariance is critical because if it does not hold, then the delta's for the control and treatment group do not cancel out and the estimate of theta is biased.
+
+d.
+
+```{r, fig.align='center', fig.cap='Trends in 6 indicies pre and post treatment', results='asis'}
+#create parallel trend plots
+
+#combine 2006 placebo data with real 2008-2010 data
+mal.all <- mal.p %>% 
+  filter(year == "2006") %>%
+  #add the real data
+  rbind(mal)
+
+mal.all %>%
+  #restructure data so index + its corresponding value are 2 separate columns
+  pivot_longer(cols = c("index1", "index2", "index3", "index4", "index5", "index6"),
+               names_to = "index_type", values_to = "value") %>%
+  #give indices informative names
+  mutate(index_type = ifelse(index_type == "index1", "Infrastructure",
+                             ifelse(index_type == "index2", "Agriculture",
+                                    ifelse(index_type == "index3", "Health Care",
+                                           ifelse(index_type == "index4", "Education",
+                                                  ifelse(index_type == "index5", "Communications",
+                                                         "Household Business")))))) %>%
+  #plot
+  ggplot(aes(x = year, y = value, group = factor(treatment), color = factor(treatment)))+
+  #the mean = point, 95% CI = error bar, line connecting
+  stat_summary(fun.y = mean, geom = "point") + 
+  stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = .2) +
+  stat_summary(fun.y= mean, geom = "line") +
+  #add vertical line indicating when tx occurred
+  geom_vline(xintercept = 2009, linetype = "dashed") +
+  theme_bw() +
+  #split apart by index and let y-axis vary
+  facet_wrap(~index_type, scales = "free_y") +
+  labs(x = "Year", y = "Index Value", color = "Treatment")
+
+
+```
+
+Based on the plots, it looks like there were parallel trends in agriculture, education, and household business. Trends in healthcare and communications clearly diverge between 2008 and 2009. There also seems to be a sharper increase in infrastructure for treated units than control units between 2008 and 2009, but this differnce in slopes is less apparent than for healthcare and communications, in which slopes are of sufficiently different magnitude that the trends for treatment and control "cross" prior to intervention.
+
+e.
+
+```{r, fig.cap = 'placebo tests', echo = FALSE}
+#statistically asses whether there is violation in parallel trends
+#using placebo tests of just the pretreatment period
+
+mal.p.sub <- subset(mal.p, year %in% c(2006, 2008))
+
+#rerun the models from before usign this placebo data
+#infrastructure
+infra.mod2 <- lm(index1 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal.p.sub)
+
+#cluster robust se's
+infra.se2 <- sqrt(diag(sandwich::vcovCL(infra.mod2, ~ tinh, type = "HC2")))
+
+#agriculture
+ag.mod2 <- lm(index2 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal.p.sub)
+#cluster robust se's
+ag.se2 <- sqrt(diag(sandwich::vcovCL(ag.mod2, ~ tinh, type = "HC2")))
+
+#health
+health.mod2 <- lm(index3 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal.p.sub)
+#cluster robust se's
+health.se2 <- sqrt(diag(sandwich::vcovCL(health.mod2, ~ tinh, type = "HC2")))
+
+#education
+edu.mod2 <- lm(index4 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal.p.sub)
+#cluster robust se's
+edu.se2 <- sqrt(diag(sandwich::vcovCL(edu.mod2, ~ tinh, type = "HC2")))
+
+#communication
+comm.mod2 <- lm(index5 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal.p.sub)
+#cluster robust se's
+comm.se2 <- sqrt(diag(sandwich::vcovCL(comm.mod2, ~ tinh, type = "HC2")))
+
+#business
+bus.mod2 <- lm(index6 ~ factor(year)*factor(treatment) + factor(reg8) + lnarea + lnpopden + 
+                  factor(city), data = mal.p.sub)
+#cluster robust se's
+bus.se2 <- sqrt(diag(sandwich::vcovCL(bus.mod2, ~ tinh, type = "HC2")))
+
+#make a table of results
+stargazer::stargazer(infra.mod2, ag.mod2, health.mod2, edu.mod2, comm.mod2, bus.mod2,
+                     se = list(infra.se2, ag.se2, health.se2, edu.se2, comm.se2, bus.se2), type = "latex",
+                     float = FALSE,
+                     dep.var.labels=c("Infrastructure","Agriculture", "Health", "Education", 
+                                      "Communications", "HH Business"), 
+                     covariate.labels=c("Year = 2008","Treatment", "Region 2","Region 3",
+                                        "Region 4","Region 5","Region 7","Region 8",
+                                        "Log Area","Log Population Density","City",
+                                        "Treatment*Year", "Constant"))
+```
+
+This suggests that there were no significant violations in parallel trends (all interaction p-values < 0.05) for any of the 6 indicies measured, though it should be noted that there may be slight differences in the slopes for the treatment vs. control group in the infrastructure index (p < 0.1). The difference between these results and those shown in c may be accounted for by the addition of covariates in the OLS models here versus the unconditional means estimated in c. In this case, *conditional* parallel trends hold, whereas *unconditional* seem not to have. Given that the conditional parallel trends assumption holds, the DID estimates in part b can be interpreted as ATEs, meaning that the increases in indices observed does appear to be a result of recentralization.

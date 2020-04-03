@@ -2,7 +2,9 @@
 title: "PSET 8"
 author: "Sarah Van Alsten"
 date: "3/23/2020"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE, echo=FALSE}
@@ -98,7 +100,7 @@ curve(expr = 0.453512+.520724*x+0.115063+.005414*x*(x>0), 0, .5, add = T, col = 
 
 $\hat\beta$ = 0.115063
 
-This suggests that the effect of incumbency on the paty's vote share in the next election is an increase of 11.5% of the vote share plus an additional 0.5% share of the vote for each additional percentage share beyond 50% of the previous election that they won (or a loss of 0.5% of the share for each percentage of the share below 50% that they won).
+This suggests that the effect of incumbency on the paty's vote share in the next election is an increase of 11.5% of the vote share for those winning around 50% of the previous vote, plus an additional 0.5% share of the vote for each additional percentage share beyond 50% of the previous election that they won (or a loss of 0.5% of the share for each percentage of the share below 50% that they won).
 
 iii)
 
@@ -141,11 +143,11 @@ plot(reg4)
 
 $\hat\beta$ = 0.08401
 
-For districts that won around 50% of the vote in the previous election, the effect of being an incumbent is an increase of 8.4% of the vote share in the next election. 
+For districts that won around 50% of the vote in the previous election, the effect of being an incumbent is an increase of 8.4% of the vote share in the next election for those winning approximately 50% of the previous vote share, plus an additional amount for each percentage of the vote won beyond that. 
 
 
 ## c)
-Yes, results do depend on the function form of the regression (directionally, the effect of incumbency is the same, i.e. positive, but the magnitude of the LATE changes). This is because each different functional form is estimating a slightly different effect with a different set of assumptions about the effect of the running variable and treatment assignment on the outcome.
+Yes, results do depend on the function form of the regression (directionally, the effect of incumbency is the same, i.e. positive, but the magnitude of the LATE changes). This is because each different functional form is estimating the effect with a different set of assumptions about the effect of the running variable and treatment assignment on the outcome, for instance, in the differing slopes model, that the effect of additional percentages of the previous vote differ according to whether the party is incumbent or not. As a result, the LATEs estimated represent slightly different quantitities and small differences are expected.
 
 
 ## d) 
