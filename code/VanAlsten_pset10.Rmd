@@ -1,0 +1,182 @@
+---
+title: "PSET 10"
+author: "Sarah Van Alsten"
+date: "4/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(plm)
+
+load("wagepan_wide.RData")
+```
+
+## Question 1
+
+a.
+```{r}
+#make a vector of column names
+names <- names(wage_wide)[-1]
+
+#reshape data to long
+dat <- wage_wide %>% 
+  pivot_longer(cols = all_of(names),
+               names_to = c("characteristic", "year"),
+               values_to = "value",
+               names_sep = "_") %>%
+  pivot_wider(id_cols = c("nr", "year"), names_from = "characteristic",
+              values_from = "value")
+
+```
+
+b.
+$\delta_t$ is a time fixed effect with an impact on all units (common shock)
+
+$\eta_i$ is a unit-level fixed effect
+
+$\epsilon_{it}$ is the time varying error (error for unit $i$ at time $t$)
+
+
+c.
+```{r}
+#set seed to randomly pick workers
+set.seed(02139)
+
+#sample 10 workers 
+ids <- sample(unique(dat$nr), size = 10, replace = FALSE)
+
+#select these workers and plot results
+dat %>%
+  filter(nr %in% ids) %>%
+  ggplot(aes(x = year, y = lwage, color = factor(nr), group = factor(nr))) +
+  geom_path() + theme_bw() +
+  labs(x = "Year", y = "Log Hourly Wage", color = "ID")
+
+
+```
+
+In general, there isn't a clear pattern other than that units ended with higher wages than they began with and that trends are not linear/constant over time. The variation within units seems to be slightly larger than the variation between units, as the spread of wages seems less pronounced than the variability over time within an observation.
+
+d.
+
+$\mathbb{V}(Y_i) = \mathbb{E}[Var(Y)|X] + Var(\mathbb{E}[Y|X])$
+
+$Var(\mathbb{E}[Y|X])$ is the between-unit variance, and refers to how much difference there is from one unit to another, or how much the differences between each individual's wages explains the total variation in wages over time.
+
+$[Var(Y)|X]$ is the within-unit variance, and refers to how much variability any one individual sees in their own wages over time.
+
+
+```{r}
+# #global mean 
+# g.m <- mean(dat$lwage, na.rm = T)
+# 
+# #sum of squares total
+# sst <- dat %>%
+#   #square deviation from global mean
+#   mutate(sq.dev = (lwage - g.m)^2) %>%
+#   #summarise the sum of squared devs
+#   summarise(sum(sq.dev))
+#   
+# 
+# #sum of squares between
+# ssb <- dat %>%
+#   #define 'x' as the groups
+#   group_by(nr) %>%
+#   #get group means of lwage
+#   mutate(clus.m = mean(lwage, na.rm = T)) %>%
+#   #square deviation from global mean
+#   mutate(sq.dev = (clus.m - g.m) ^ 2) %>%
+#   #multiply by #obs for
+#   ungroup()%>%
+#   #summarise the sum of squared devs
+#   summarise(sum(sq.dev))
+# 
+# #ssw = sst - ssb
+# ssw <- sst - ssb
+# 
+# #variance: ss/(n-1)
+# v.total <- sst/(nrow(dat)-1)
+# v.btwn <- ssb/(length(unique(dat$nr))-1)
+# v.with <- ssw/(nrow(dat) - length(unique(dat$nr)))
+# 
+# 
+# print(paste("Sum of Squares Total:", sst[1,1]))
+# print(paste("Sum of Squares Between:", ssb[1,1]))
+# print(paste("Sum of Squares Within", ssw[1,1]))
+
+
+#E{Var(Y)|X} = mean of var within
+var.within <- dat %>%
+  group_by(nr) %>%
+  summarise(group.var = var(lwage, na.rm = T)) %>%
+  summarise(e.group.var = mean(group.var))
+
+#var total
+var.total <- var(dat$lwage, na.rm = T)
+
+
+#var btwn = total - within
+var.btwn <- var.total - var.within
+
+#print results
+print(paste("Variance Within:", var.within[1,1]))
+print(paste("(Mean) Variance Between:", var.btwn))
+print(paste("Variance Total:", var.total))
+```
+
+The between-unit variance is slightly larger than the within-unit variance, which is consistent with the graph.
+e.
+```{r}
+#fit model assuming uncorrelated error
+mod <- lm(lwage ~ educ + black + hisp + exper +
+            I(exper^2)+ married + union, data = dat)
+
+#summary without cluster robust SEs
+summary(mod)
+
+#with correct, cluster robust SEs
+lmtest::coeftest(mod, vcov=function(x) vcovHC(x, cluster="nr", type="HC1"))
+```
+
+We are estimating 
+
+f.
+```{r, warning=FALSE, message=FALSE}
+#make de-meaned variables
+
+#copy data set and add suffix to var names
+dat.dm <- dat
+names(dat.dm)[3:10] <- paste0(names(dat.dm[3:10]), "_dm")
+
+#make demeaned versions of all predictors + y variable
+dat.dm <- dat.dm %>%
+  group_by(nr) %>%
+  select(-year)%>%
+  mutate_all(.funs = ~(. - mean(., na.rm = T)))
+
+#add year back on            
+dat.dm$year <- dat$year
+
+#estimated demeaned model
+mod.dm <- lm(lwage_dm ~ educ_dm + black_dm + hisp_dm + exper_dm +
+            I(exper_dm^2)+ married_dm + union_dm -1 , data = dat.dm) 
+
+
+mod.dm2 <- lm(lwage_dm ~ educ_dm + black_dm + hisp_dm + exper_dm +
+            I(exper_dm^2)+ married_dm + union_dm  , data = dat.dm)
+summary(mod.dm) #4536
+summary(mod.dm2) #4355          
+
+?lm
+```
+
+Time invariant variables (education, Black, and Hispanic) are NA because they do not contribute to within-unit wage changes (the rank condition states that predictors must change overtime for at least some units, which is not the case for these characteristics). The estimated effect of union membership is much smaller in the within model than the pooled model (0.084 vs 0.180).
+
+For this model, we are assuming that there is no serial correlation (the wages in one time period aren't dependent on the wages for an earlier period), that the each unit's treatment doesn't affect the potential outcomes of other units (no interference), that the effect of union membership is the same for all treated units (no different version of treatment), and that we have not omitted any time-varying predictors of the outcome (e.g. a gradual roll out of a minimum wage increase affecting only some workers). It seems highly unlikely that we don't observe serial correlation - an individuals' wages are generally partially dependent upon previous wages, such as when they get a salary increase, or would only accept a new job with higher pay than their current position. This implies that some of what our error term is capturing - like an employee's perceived merit by their employer; which would affect wages - is persistent over time and errors would be correlated.
+
+
+g.
+
+
