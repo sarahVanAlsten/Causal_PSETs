@@ -67,46 +67,7 @@ $Var(\mathbb{E}[Y|X])$ is the between-unit variance, and refers to how much diff
 
 $[Var(Y)|X]$ is the within-unit variance, and refers to how much variability any one individual sees in their own wages over time.
 
-
 ```{r}
-# #global mean 
-# g.m <- mean(dat$lwage, na.rm = T)
-# 
-# #sum of squares total
-# sst <- dat %>%
-#   #square deviation from global mean
-#   mutate(sq.dev = (lwage - g.m)^2) %>%
-#   #summarise the sum of squared devs
-#   summarise(sum(sq.dev))
-#   
-# 
-# #sum of squares between
-# ssb <- dat %>%
-#   #define 'x' as the groups
-#   group_by(nr) %>%
-#   #get group means of lwage
-#   mutate(clus.m = mean(lwage, na.rm = T)) %>%
-#   #square deviation from global mean
-#   mutate(sq.dev = (clus.m - g.m) ^ 2) %>%
-#   #multiply by #obs for
-#   ungroup()%>%
-#   #summarise the sum of squared devs
-#   summarise(sum(sq.dev))
-# 
-# #ssw = sst - ssb
-# ssw <- sst - ssb
-# 
-# #variance: ss/(n-1)
-# v.total <- sst/(nrow(dat)-1)
-# v.btwn <- ssb/(length(unique(dat$nr))-1)
-# v.with <- ssw/(nrow(dat) - length(unique(dat$nr)))
-# 
-# 
-# print(paste("Sum of Squares Total:", sst[1,1]))
-# print(paste("Sum of Squares Between:", ssb[1,1]))
-# print(paste("Sum of Squares Within", ssw[1,1]))
-
-
 #E{Var(Y)|X} = mean of var within
 var.within <- dat %>%
   group_by(nr) %>%
@@ -121,62 +82,93 @@ var.total <- var(dat$lwage, na.rm = T)
 var.btwn <- var.total - var.within
 
 #print results
-print(paste("Variance Within:", var.within[1,1]))
-print(paste("(Mean) Variance Between:", var.btwn))
-print(paste("Variance Total:", var.total))
+print(paste("Variance Within:", sprintf("%.4f", var.within[1,1])))
+print(paste("(Mean) Variance Between:", sprintf("%.4f", var.btwn)))
+print(paste("Variance Total:", sprintf("%.4f", var.total)))
 ```
 
 The between-unit variance is slightly larger than the within-unit variance, which is consistent with the graph.
 e.
 ```{r}
+#make this manually so the name of the var is consistent in stargazer part f/g
+dat$exper_sq <- dat$exper^2
+
 #fit model assuming uncorrelated error
 mod <- lm(lwage ~ educ + black + hisp + exper +
-            I(exper^2)+ married + union, data = dat)
-
-#summary without cluster robust SEs
+           exper_sq+ married + union, data = dat)
 summary(mod)
 
-#with correct, cluster robust SEs
-lmtest::coeftest(mod, vcov=function(x) vcovHC(x, cluster="nr", type="HC1"))
+#make nice output
+stargazer::stargazer(mod, float = FALSE)
+
 ```
 
-We are estimating 
+The effect of belonging to a union is an increase of 0.180 (se = 0.017) on log of wages.
+We are estimating the pooled effect - the effect of union membership on wages assuming that the effects of all other covariates do not change over time and that there is no serial autocorrelation for units. In other words, that all the variation in wages not capture by our model does not depend on the error at different periods in time (and hence why we only include $\epsilon_{it}$ and not $\alpha_i$. )
+Because we assumed no autocorrelation in order to say that the estimate was unbiased, we don't need to cluster the standard errors- the potential outcomes for each unit $i$ at each time $t$ are assumed to not depend on one another. Thus, conventional OLS SEs are okay given our assumptions.
 
 f.
 ```{r, warning=FALSE, message=FALSE}
 #make de-meaned variables
 
-#copy data set and add suffix to var names
+#copy data set so can use mutate all without messing up raw data
 dat.dm <- dat
-names(dat.dm)[3:10] <- paste0(names(dat.dm[3:10]), "_dm")
 
 #make demeaned versions of all predictors + y variable
 dat.dm <- dat.dm %>%
+  #need to demean the actual squared term; not just square the demeaned base
+  #hence why squared term defined apart from I() syntax
   group_by(nr) %>%
   select(-year)%>%
-  mutate_all(.funs = ~(. - mean(., na.rm = T)))
+  mutate_all(.funs = ~(. - mean(., na.rm = T))) 
+
 
 #add year back on            
 dat.dm$year <- dat$year
 
 #estimated demeaned model
-mod.dm <- lm(lwage_dm ~ educ_dm + black_dm + hisp_dm + exper_dm +
-            I(exper_dm^2)+ married_dm + union_dm -1 , data = dat.dm) 
+mod.dm <- lm(lwage ~ educ + black + hisp + exper +
+            exper_sq+ married + union -1, data = dat.dm) 
 
+#correct total degrees of freedom= Nt- N - K
+mod.dm$df.residual <- (8*545 - 545 - 4)
+summary(mod.dm) 
+         
 
-mod.dm2 <- lm(lwage_dm ~ educ_dm + black_dm + hisp_dm + exper_dm +
-            I(exper_dm^2)+ married_dm + union_dm  , data = dat.dm)
-summary(mod.dm) #4536
-summary(mod.dm2) #4355          
+#report results
+stargazer::stargazer(mod.dm, float = FALSE)
 
-?lm
 ```
 
-Time invariant variables (education, Black, and Hispanic) are NA because they do not contribute to within-unit wage changes (the rank condition states that predictors must change overtime for at least some units, which is not the case for these characteristics). The estimated effect of union membership is much smaller in the within model than the pooled model (0.084 vs 0.180).
+Time invariant variables (education, Black, and Hispanic) are dropped because they do not contribute to within-unit wage changes (the rank condition states that predictors must change overtime for at least some units, which is not the case for these characteristics). The estimated effect of union membership is much smaller in the within model than the pooled model (0.084 vs 0.180).
 
-For this model, we are assuming that there is no serial correlation (the wages in one time period aren't dependent on the wages for an earlier period), that the each unit's treatment doesn't affect the potential outcomes of other units (no interference), that the effect of union membership is the same for all treated units (no different version of treatment), and that we have not omitted any time-varying predictors of the outcome (e.g. a gradual roll out of a minimum wage increase affecting only some workers). It seems highly unlikely that we don't observe serial correlation - an individuals' wages are generally partially dependent upon previous wages, such as when they get a salary increase, or would only accept a new job with higher pay than their current position. This implies that some of what our error term is capturing - like an employee's perceived merit by their employer; which would affect wages - is persistent over time and errors would be correlated.
+For this model, we are assuming that there is no serial correlation (the wages in one time period aren't dependent on the wages for an earlier period), that the each unit's treatment doesn't affect the potential outcomes of other units (no interference), that the effect of union membership is the same for all treated units (no different version of treatment), that higher wages don't increase probability of being in a uninon (simultaneity), that we have not omitted any time-varying predictors of the outcome (e.g. a gradual roll out of a minimum wage increase affecting only some workers), and, relatedly, that there is exogeneity conditional on the any unobserved effect. It seems highly unlikely that we don't observe serial correlation - an individuals' wages are generally partially dependent upon previous wages, such as when they get a salary increase, or would only accept a new job with higher pay than their current position. This implies that some of what our error term is capturing - like an employee's perceived merit by their employer; which would affect wages - is persistent over time and errors would be correlated.
 
 
 g.
+```{r, warning=FALSE, message = FALSE, error=FALSE}
+#estimate with plm
+pdata <- pdata.frame(dat, c("nr", "year"))
+
+mod.fe <- plm(lwage ~ educ + black + hisp + exper +
+                exper_sq+ married + union, data = pdata, index = nr) 
+#summary(mod.fe)
+
+#clustered Std Errors accounting for serial correlation
+ses <- lmtest::coeftest(mod.fe, vcov=function(x) vcovHC(x, cluster="group", type="HC1"))
+
+#show results in a table
+stargazer::stargazer(mod.dm, mod.fe,
+                     se = list(summary(mod.dm)$coef[,2], ses[,2]),
+                     float = FALSE)
+
+```
+
+All point estimates are the same, as are the number of observations, R^2 values and the model F-test.
+
+h.
+```{r}
+
+```
 
 
