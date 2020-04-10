@@ -217,11 +217,12 @@ j.
 ```{r}
 #linear trend 
 dat$year_num <- as.numeric(pdata$year)
+pdata$year_num <- as.numeric(pdata$year)
 
-#estimate with lfe, clustering SEs on unit
-mod.lt <- felm(lwage ~ educ + black + hisp + exper +
-                     exper_sq + married + union + year_num | nr | 0 |nr, data = dat)
-summary(mod.lt)
+# #estimate with lfe, clustering SEs on unit
+# mod.lt <- felm(lwage ~ educ + black + hisp + exper +
+#                      exper_sq + married + union + year_num | nr | 0 |nr, data = dat)
+# summary(mod.lt)
 
 
 #include linear time effect in model
@@ -232,9 +233,10 @@ mod.time.trend <- plm(lwage ~ educ + black + hisp + exper +
                       model = "within")
 summary(mod.time.trend)
 
-lmtest::coeftest(mod.time.trend, vcov=function(x) vcovHC(x, cluster="group", type="HC1"))
+ses.tt <- lmtest::coeftest(mod.time.trend, vcov=function(x) vcovHC(x, cluster="group", type="HC1"))
 
-
+#print out results
+stargazer::stargazer(mod.time.trend, ses = ses.tt)
 
 
 ```
