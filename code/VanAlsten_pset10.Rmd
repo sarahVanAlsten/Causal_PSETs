@@ -9,7 +9,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(plm)
-library(lfe)
 
 load("wagepan_wide.RData")
 ```
@@ -104,7 +103,7 @@ stargazer::stargazer(mod, float = FALSE)
 
 ```
 
-The effect of belonging to a union is an increase of 0.180 (se = 0.017) on log of wages.
+The effect of belonging to a union is an increase of 0.180 (se = 0.017) on log of wages (and thus, generally this implies that being in a union increases wages).
 We are estimating the pooled effect - the effect of union membership on wages assuming that the effects of all other covariates do not change over time and that there is no serial autocorrelation for units. In other words, that all the variation in wages not capture by our model does not depend on the error at different periods in time (and hence why we only include $\epsilon_{it}$ and not $\alpha_i$. )
 Because we assumed no autocorrelation in order to say that the estimate was unbiased, we don't need to cluster the standard errors- the potential outcomes for each unit $i$ at each time $t$ are assumed to not depend on one another. Thus, conventional OLS SEs are okay given our assumptions.
 
@@ -141,7 +140,9 @@ stargazer::stargazer(mod.dm, float = FALSE)
 
 Time invariant variables (education, Black, and Hispanic) are dropped because they do not contribute to within-unit wage changes (the rank condition states that predictors must change overtime for at least some units, which is not the case for these characteristics). The estimated effect of union membership is much smaller in the within model than the pooled model (0.084 vs 0.180).
 
-For this model, we are assuming that there is no serial correlation (the wages in one time period aren't dependent on the wages for an earlier period), that the each unit's treatment doesn't affect the potential outcomes of other units (no interference), that the effect of union membership is the same for all treated units (no different version of treatment), that higher wages don't increase probability of being in a uninon (simultaneity), that we have not omitted any time-varying predictors of the outcome (e.g. a gradual roll out of a minimum wage increase affecting only some workers), and, relatedly, that there is exogeneity conditional on the any unobserved effect. It seems highly unlikely that we don't observe serial correlation - an individuals' wages are generally partially dependent upon previous wages, such as when they get a salary increase, or would only accept a new job with higher pay than their current position. This implies that some of what our error term is capturing - like an employee's perceived merit by their employer; which would affect wages - is persistent over time and errors would be correlated.
+For this model, that the each unit's treatment doesn't affect the potential outcomes of other units (no interference), that the effect of union membership is the same for all treated units (no different version of treatment), that higher wages don't increase probability of being in a uninon (simultaneity), that we have not omitted any time-varying predictors of the outcome (e.g. a gradual roll out of a minimum wage increase affecting only some workers), and, relatedly, that there is exogeneity conditional on the any unobserved effect. This is slightly different from the assumptions in the previous question because we assume exogeneity conditional on unobserved effects whereas the previous model assumed the effect was exogenous without conditioning on unobserved effects.
+
+It seems highly unlikely that we don't observe serial correlation - an individuals' wages are generally partially dependent upon previous wages, such as when they get a salary increase, or would only accept a new job with higher pay than their current position. This implies that some of what our error term is capturing - like an employee's perceived merit by their employer; which would affect wages - is persistent over time and errors would be correlated.
 
 
 g.
@@ -198,6 +199,7 @@ dat %>%
 ```
 
 Units with no/little variation in union status generally should increase the standard errors of the estimate for union, because they are adding to the degrees of freedom but not contributing much variation to the estimate. Unlike those that do have some variation, the estimated effect for units with no variation is calculated using only the variation in wages over time, since there is no variation within the individual.
+Individuals with high variance differ from those with low variance in calculating our estimate because the effect of unit should contribute to both time and unit fixed effects.
 
 j.
 ```{r}
@@ -220,6 +222,8 @@ ses.tt <- lmtest::coeftest(mod.time.trend, vcov=function(x) vcovHC(x, cluster="g
 ses.tt[,2][[3]]
 
 ```
+
+The unit-specific linear time trends are allowing the effect of time to differ between individuals.
 
 k.
 
@@ -278,5 +282,4 @@ dat %>%
 
 
 l.
-
-No, I would disagree with him.
+I would say this is incorrect. The error before including the fixed effect is composed of both unit-specific heterogeneity ($\alpha_i$) and heterogeneity at the unit/time level ($\epsilon_{it}$). Adding in unit-fixed effects takes care of the first part, but doesn't necessarily solve all problems with serial correlation subsumed under the second part. By definiton, it's only addressing the time-invariant factors that may cause correlation, but it is possible that time-variant factors cause correlation, too, and that can be addressed when we include clustered standard errors.
