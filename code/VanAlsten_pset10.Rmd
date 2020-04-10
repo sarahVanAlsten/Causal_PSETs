@@ -160,14 +160,6 @@ stargazer::stargazer(mod.dm, mod.fe,
                      float = FALSE)
 
 
-# #estimate with lfe, clustering SEs on unit
-# mod.fe <- felm(lwage ~ educ + black + hisp + exper +
-#                      exper_sq + married + union | nr | 0 |nr, data = dat)
-# #summary(mod.fe)
-# 
-# #show results in a table
-# stargazer::stargazer(mod.dm, mod.fe, 
-#                      float = FALSE)
 
 ```
 
@@ -182,12 +174,6 @@ mod.tf <- plm(lwage ~ educ + black + hisp + exper +
 summary(mod.tf)
 #clustered Std Errors accounting for serial correlation
 ses.tf <- lmtest::coeftest(mod.tf, vcov=function(x) vcovHC(x, cluster="group", type="HC1"))
-
-
-# #estimate with lfe, clustering SEs on unit
-# mod.tf <- felm(lwage ~ educ + black + hisp + exper +
-#                      exper_sq + married + union | nr + year| 0 |nr, data = dat)
-# summary(mod.tf)
 
 #print out results
 stargazer::stargazer(mod.tf, float = FALSE, se = ses.tf)
@@ -219,12 +205,6 @@ j.
 dat$year_num <- as.numeric(pdata$year)
 pdata$year_num <- as.numeric(pdata$year)
 
-# #estimate with lfe, clustering SEs on unit
-# mod.lt <- felm(lwage ~ educ + black + hisp + exper +
-#                      exper_sq + married + union + year_num | nr | 0 |nr, data = dat)
-# summary(mod.lt)
-
-
 #include unit specific linear time effect in model
 mod.time.trend <- plm(lwage ~ educ + black + hisp + exper +
                       exper_sq + married + union + factor(nr)*year_num,
@@ -255,32 +235,41 @@ dat %>%
 ```{r}
 #run 3 diff models
 #unit fixed effects
-u.fe <- felm(lwage ~ union | nr | 0 |nr,
-             data = dat)
+u.fe <- plm(lwage ~ union, data = pdata,
+            model = "within",
+            effect = "individual")
 
 #unit and time fixed effects
-ut.fe <- felm(lwage ~ union | nr + year| 0 |nr,
-             data = dat)
+ut.fe <- plm(lwage ~ union, data = pdata,
+            model = "within",
+            effect = "twoways")
 
-
-#unit fixed effects and time linear trend
-u.fe.lt <- felm(lwage ~ union + year_num| nr| 0 |nr,
-               data = dat)
+#unit fixed effects and unit specific time linear trend
+ut.fe.lt <- plm(lwage ~ union + factor(nr)*year_num, data = pdata,
+            model = "within",
+            effect = "twoways")
 
 #lapply(list(u.fe, ut.fe, u.fe.lt), FUN = summary)
 
 #add predicted values to the data frame
-dat$u.fe.pred <- u.fe$fitted.values
-dat$ut.fe.pred <- ut.fe$fitted.values
-dat$u.fe.lt.pred <- u.fe.lt$fitted.values
+dat$u.fe.pred <- predict(u.fe, type = "response")
+dat$ut.fe.pred <- predict(ut.fe, type = "response")
+dat$ut.fe.lt.pred <- predict(ut.fe.lt, type = "response")
 
-
-#plot individual 408's wages by year
+#the predicted response is the variation from the individual mean --> add
+#back on the unit's mean lwage to get actual predicted value
 dat %>%
+  group_by(nr) %>%
+  mutate(m.lwage = mean(lwage, na.rm =T)) %>%
+  ungroup() %>%
+  #add to predictions
+  mutate_at(vars(contains("pred")), .funs = ~(. + m.lwage)) %>%
+  #plot for individual 408 only
   filter(nr == 408) %>%
   ggplot(aes(x = year, y = lwage, group = nr)) + geom_point() +
   theme_classic() + labs(x = "Year", y = "Log Wages", color = "Model") +
-  geom_path(aes(x = year, y = u.fe.lt.pred, color = "Unit Fixed Effects + Linear Time Trend")) +
+  geom_path(aes(x = year, y = ut.fe.lt.pred,
+                color = "Unit Fixed Effects + \nUnit Linear Time Trend")) +
     geom_path(aes(x = year, y = u.fe.pred, color = "Unit Fixed Effects")) +
     geom_path(aes(x = year, y = ut.fe.pred, color = "Unit + Time Fixed Effects")) 
   
