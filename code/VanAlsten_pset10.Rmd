@@ -176,13 +176,21 @@ All point estimates are the same, although the standard errors differ because we
 h.
 ```{r, warning=FALSE, message = FALSE}
 
-#estimate with lfe, clustering SEs on unit
-mod.tf <- felm(lwage ~ educ + black + hisp + exper +
-                     exper_sq + married + union | nr + year| 0 |nr, data = dat)
+mod.tf <- plm(lwage ~ educ + black + hisp + exper +
+                exper_sq+ married + union, data = pdata, 
+              index = nr, effect = "twoways", model = "within") 
 summary(mod.tf)
+#clustered Std Errors accounting for serial correlation
+ses.tf <- lmtest::coeftest(mod.tf, vcov=function(x) vcovHC(x, cluster="group", type="HC1"))
+
+
+# #estimate with lfe, clustering SEs on unit
+# mod.tf <- felm(lwage ~ educ + black + hisp + exper +
+#                      exper_sq + married + union | nr + year| 0 |nr, data = dat)
+# summary(mod.tf)
 
 #print out results
-stargazer::stargazer(mod.tf, float = FALSE)
+stargazer::stargazer(mod.tf, float = FALSE, se = ses.tf)
 
 ```
 
