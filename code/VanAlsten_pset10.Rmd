@@ -225,19 +225,19 @@ pdata$year_num <- as.numeric(pdata$year)
 # summary(mod.lt)
 
 
-#include linear time effect in model
+#include unit specific linear time effect in model
 mod.time.trend <- plm(lwage ~ educ + black + hisp + exper +
-                      exper_sq + married + union + year_num,
+                      exper_sq + married + union + factor(nr)*year_num,
                       data = pdata,
-                      effect = "individual",
+                      effect = "twoways",
                       model = "within")
-summary(mod.time.trend)
 
+#coefficient for union membership
+mod.time.trend$coefficients[3]
 ses.tt <- lmtest::coeftest(mod.time.trend, vcov=function(x) vcovHC(x, cluster="group", type="HC1"))
 
-#print out results
-stargazer::stargazer(mod.time.trend, ses = ses.tt)
-
+#show the se for union specifically
+ses.tt[,2][[3]]
 
 ```
 
